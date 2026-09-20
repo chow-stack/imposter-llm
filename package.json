@@ -1,0 +1,31 @@
+{
+  "name": "imposter-llm",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 0.0.0.0",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 0.0.0.0",
+    "test": "node --env-file=.env.local tests/integration.mjs",
+    "check:secrets": "node scripts/check-secrets.mjs",
+    "prebuild": "npm run check:secrets"
+  },
+  "dependencies": {
+    "@fontsource-variable/dm-sans": "5.3.0",
+    "@supabase/supabase-js": "2.116.0",
+    "lucide-react": "0.468.0",
+    "react": "19.3.0",
+    "react-dom": "19.3.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.58.2",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "@vitejs/plugin-react": "6.0.1",
+    "prettier": "3.8.1",
+    "supabase": "2.117.0",
+    "typescript": "5.9.3",
+    "vite": "8.3.0"
+  }
+}

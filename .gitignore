@@ -1,0 +1,25 @@
+# Dependencies and generated output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+
+# Local configuration and credentials (only empty examples are public)
+.env
+.env.*
+!.env.example
+*.local
+*.pem
+*.key
+*.p12
+*.pfx
+.npmrc
+.vercel/
+supabase/.temp/
+supabase/.branches/
+
+# Test artifacts and machine files
+test-results/
+playwright-report/
+*.log
+.DS_Store
