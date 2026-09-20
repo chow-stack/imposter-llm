@@ -23,7 +23,14 @@ const supabase = createClient(
   import.meta.env.VITE_SUPABASE_URL,
   import.meta.env.VITE_SUPABASE_PUBLISHABLE_KEY,
 );
-type Team = { id: string; name: string; score: number; captain_id: string };
+type Team = {
+  id: string;
+  name: string;
+  name_locked: boolean;
+  position: number;
+  score: number;
+  captain_id: string;
+};
 type Player = { id: string; nickname: string; team_id: string | null };
 type Answer = {
   id: string;
@@ -85,7 +92,8 @@ function App() {
     [connected, setConnected] = useState(false),
     [online, setOnline] = useState<string[]>([]),
     [copied, setCopied] = useState(false),
-    [reset, setReset] = useState(false);
+    [reset, setReset] = useState(false),
+    [teamNames, setTeamNames] = useState<Record<string, string>>({});
   const lastRound = useRef(""),
     current = useRef<State | null>(null),
     inflight = useRef(false);
@@ -135,10 +143,11 @@ function App() {
     setError("");
     try {
       await auth();
-      const { data, error } = await supabase.rpc("game_action", {
-        action,
-        payload: { game_id: state?.game.id, ...payload },
-      });
+      const request = { game_id: state?.game.id, ...payload };
+      const { data, error } =
+        action === "team"
+          ? await supabase.rpc("game_team", { payload: request })
+          : await supabase.rpc("game_action", { action, payload: request });
       if (error) throw error;
       accept(data);
       if (action === "create" || action === "join")
@@ -490,62 +499,109 @@ function App() {
                   </span>
                 </div>
                 <div className="team-grid">
-                  {state.teams.map((t, i) => (
-                    <article
-                      className={
-                        "team-card " + (myTeam?.id === t.id ? "selected" : "")
-                      }
-                      key={t.id}
-                    >
-                      <span className={"team-symbol tone-" + i}>
-                        <Users size={24} />
-                      </span>
-                      <h3>{t.name}</h3>
-                      <div className="member-list">
-                        {state.players
-                          .filter((p) => p.team_id === t.id)
-                          .map((p) => (
-                            <div key={p.id}>
-                              <span
-                                className={
-                                  "presence " +
-                                  (online.includes(p.id) ? "here" : "")
+                  {[...state.teams]
+                    .sort((a, b) => a.position - b.position)
+                    .map((t, i) => {
+                      const members = state.players.filter(
+                          (p) => p.team_id === t.id,
+                        ),
+                        canName =
+                          !t.name_locked &&
+                          (members.length === 0 ||
+                            (myTeam?.id === t.id && captain)),
+                        chosenName = teamNames[t.id] || "";
+                      return (
+                        <article
+                          className={
+                            "team-card " +
+                            (myTeam?.id === t.id ? "selected" : "")
+                          }
+                          key={t.id}
+                        >
+                          <span className={"team-symbol tone-" + i}>
+                            <Users size={24} />
+                          </span>
+                          <h3>
+                            {t.name_locked ? t.name : `Team ${t.position}`}
+                          </h3>
+                          {canName && (
+                            <label>
+                              Team name
+                              <input
+                                autoCapitalize="words"
+                                maxLength={24}
+                                placeholder="The Context Bandits"
+                                value={chosenName}
+                                onChange={(e) =>
+                                  setTeamNames((names) => ({
+                                    ...names,
+                                    [t.id]: e.target.value,
+                                  }))
                                 }
                               />
-                              {p.nickname}
-                              {p.id === t.captain_id && (
-                                <span className="small">captain</span>
-                              )}
-                            </div>
-                          ))}
-                        {!state.players.some((p) => p.team_id === t.id) && (
-                          <p className="muted">A fresh set of suspects.</p>
-                        )}
-                      </div>
-                      <button
-                        disabled={
-                          busy ||
-                          myTeam?.id === t.id ||
-                          state.players.filter((p) => p.team_id === t.id)
-                            .length >= 4
-                        }
-                        className={
-                          myTeam?.id === t.id
-                            ? "outline selected-button"
-                            : "outline"
-                        }
-                        onClick={() => act("team", { team_id: t.id })}
-                      >
-                        {myTeam?.id === t.id ? (
-                          <>
-                            <Check size={16} /> Your team
-                          </>
-                        ) : (
-                          "Join team"
-                        )}
-                      </button>
-                    </article>
-                  ))}
+                            </label>
+                          )}
+                          {!t.name_locked && members.length > 0 && !canName && (
+                            <p className="muted">
+                              The captain is choosing this team’s name.
+                            </p>
+                          )}
+                          <div className="member-list">
+                            {members.map((p) => (
+                              <div key={p.id}>
+                                <span
+                                  className={
+                                    "presence " +
+                                    (online.includes(p.id) ? "here" : "")
+                                  }
+                                />
+                                {p.nickname}
+                                {p.id === t.captain_id && (
+                                  <span className="small">captain</span>
+                                )}
+                              </div>
+                            ))}
+                            {!members.length && (
+                              <p className="muted">A fresh set of suspects.</p>
+                            )}
+                          </div>
+                          <button
+                            disabled={
+                              busy ||
+                              (myTeam?.id === t.id && t.name_locked) ||
+                              members.length >= 4 ||
+                              (!t.name_locked &&
+                                (!canName || !chosenName.trim()))
+                            }
+                            className={
+                              myTeam?.id === t.id
+                                ? "outline selected-button"
+                                : "outline"
+                            }
+                            onClick={() =>
+                              act("team", {
+                                team_id: t.id,
+                                ...(!t.name_locked
+                                  ? { team_name: chosenName }
+                                  : {}),
+                              })
+                            }
+                          >
+                            {myTeam?.id === t.id && t.name_locked ? (
+                              <>
+                                <Check size={16} /> Your team
+                              </>
+                            ) : myTeam?.id === t.id ? (
+                              "Save team name"
+                            ) : !t.name_locked ? (
+                              "Name and join team"
+                            ) : (
+                              "Join team"
+                            )}
+                          </button>
+                        </article>
+                      );
+                    })}
                 </div>
                 {state.players.some((p) => !p.team_id) && (
                   <p className="small">

@@ -12,6 +12,15 @@ const call = async (c, action, payload = {}) => {
   assert.equal(error, null, error?.message);
   return data;
 };
+const chooseTeam = async (c, payload) => {
+  const { data, error } = await c.rpc("game_team", { payload });
+  assert.equal(error, null, error?.message);
+  return data;
+};
+const deniedTeam = async (c, payload) => {
+  const { error } = await c.rpc("game_team", { payload });
+  assert.ok(error, "team change must be denied");
+};
 const denied = async (c, action, payload) => {
   const { error } = await c.rpc("game_action", { action, payload });
   assert.ok(error, action + " must be denied");
@@ -30,13 +39,29 @@ let s = await call(host, "create", { nickname: "Integration host", teams: 3 });
 const gid = s.game.id;
 console.log("Test room:", s.game.code, "id:", gid);
 const players = [a, b, c];
+const teamNames = ["Context Bandits", "Token Goblins", "Prompt Pirates"];
 for (let i = 0; i < 3; i++) {
   await call(players[i], "join", {
     nickname: "Test captain " + i,
     code: s.game.code,
   });
-  await call(players[i], "team", { game_id: gid, team_id: s.teams[i].id });
+  await chooseTeam(players[i], {
+    game_id: gid,
+    team_id: s.teams[i].id,
+    team_name: teamNames[i],
+  });
 }
+const namedTeams = (await snapshot(a)).teams;
+for (let i = 0; i < 3; i++)
+  assert.equal(
+    namedTeams.find((team) => team.id === s.teams[i].id).name,
+    teamNames[i],
+  );
+await deniedTeam(a, {
+  game_id: gid,
+  team_id: s.teams[0].id,
+  team_name: "Renamed after joining",
+});
 assert.equal((await outsider.rpc("game_state", { p_game_id: gid })).data, null);
 assert.deepEqual(
   (await outsider.from("games").select("*").eq("id", gid)).data,
@@ -48,18 +73,16 @@ assert.ok(
 assert.ok((await a.schema("game_private").from("rounds").select("*")).error);
 await denied(a, "start", { game_id: gid, bank_id: 1, seconds: 60 });
 let changes = 0;
-const channel = a
-  .channel("integration:" + gid)
-  .on(
-    "postgres_changes",
-    {
-      event: "UPDATE",
-      schema: "public",
-      table: "games",
-      filter: "id=eq." + gid,
-    },
-    () => changes++,
-  );
+const channel = a.channel("integration:" + gid).on(
+  "postgres_changes",
+  {
+    event: "UPDATE",
+    schema: "public",
+    table: "games",
+    filter: "id=eq." + gid,
+  },
+  () => changes++,
+);
 await new Promise((resolve, reject) => {
   const timeout = setTimeout(
     () => reject(Error("Realtime subscribe timeout")),

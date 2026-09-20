@@ -11,6 +11,11 @@ const call = async (c, action, payload) => {
   if (error) throw error;
   return data;
 };
+const chooseTeam = async (c, payload) => {
+  const { data, error } = await c.rpc("game_team", { payload });
+  if (error) throw error;
+  return data;
+};
 let gid;
 for (let i = 0; i < 3; i++) {
   await clients[i].auth.signInAnonymously();
@@ -19,7 +24,11 @@ for (let i = 0; i < 3; i++) {
     nickname: ["Ada", "Grace", "Alan"][i],
   });
   gid = s.game.id;
-  await call(clients[i], "team", { game_id: gid, team_id: s.teams[i].id });
+  await chooseTeam(clients[i], {
+    game_id: gid,
+    team_id: s.teams[i].id,
+    team_name: ["Context Bandits", "Token Goblins", "Prompt Pirates"][i],
+  });
 }
 console.log("Preview teams ready");
 let answered = false,

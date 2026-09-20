@@ -22,3 +22,10 @@
 ## 2026-09-20 — Vercel build fix
 
 - Vite now exposes only `VITE_SUPABASE_*` variables (`envPrefix`) and ignores other `VITE_*` variables such as those Vercel injects, instead of failing the build. A stray `VITE_SUPABASE_*` variable still fails and the error names it. Verified extra variables do not reach the bundle.
+
+# 2026-09-20 — Player-chosen team names
+
+- Replaced fixed display names with a one-time team name chosen by the first player to join each team.
+- Added server-side captain, lobby, length, uniqueness, capacity, and membership checks through the `game_team` RPC.
+- Added stable team positions and integration coverage for choosing and locking names.
+- Added an insert trigger so the already-deployed room-creation function assigns those positions without requiring an immediate function replacement.

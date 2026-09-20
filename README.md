@@ -23,12 +23,11 @@ The Supabase **publishable** key is necessarily visible in the deployed JavaScri
 
 Vercel responses include a Content Security Policy limiting scripts to the app origin, connections to Supabase, and fonts to Google Fonts. Framing, object embeds, camera, microphone, and geolocation are disabled. These headers take effect on Vercel, not on the Vite development server.
 
-
 ## Play
 
 1. Host a room with 3–5 teams; four or five is ideal for a 20-member club.
-2. Share the code or copied room link. Players enter nicknames and pick teams (up to four players each).
-3. The first person on each team is its captain, who submits answers and both votes. One device per team also works. The host can remain a spectator for a shared screen.
+2. Share the code or copied room link. Players enter nicknames and pick teams (up to four players each). The first person to join an empty team chooses its permanent name for that game.
+3. That first person is also the team captain, who submits answers and both votes. One device per team also works. The host can remain a spectator for a shared screen.
 4. Select one of the nine source rounds and a 60, 75, or 90-second timer.
 5. Teams privately reveal their context and submit 1–2 sentences (320-character cap). Captains can revise until the server deadline. Drafts survive refresh on the same device.
 6. After the timer, the host opens voting. All answers appear in a stable, randomized order without team identities.
@@ -55,7 +54,7 @@ The brief did not define ties, missing answers, or zero-vote outcomes; these exp
 - React + TypeScript + Vite; Supabase Anonymous Auth, Postgres, RLS, RPCs, Realtime database changes, and Presence.
 - `public.games` contains only room metadata and a revision counter. RLS restricts reads to members.
 - `game_private` contains the round bank, teams, players, assignments, rounds, answers, and votes. Tables have RLS and no client table grants.
-- Public `game_action` and `game_state` functions are invoker wrappers around private, narrowly authorized functions. The private functions validate `auth.uid()`, membership, captain/host authority, phase, timer, and vote targets. All functions pin their search paths and deny unauthenticated execution.
+- Public `game_action`, `game_team`, and `game_state` functions are invoker wrappers around private, narrowly authorized functions. The private functions validate `auth.uid()`, membership, captain/host authority, phase, timer, team-name ownership, and vote targets. All functions pin their search paths and deny unauthenticated execution.
 - Secret contexts and imposter identity never appear in pre-reveal room snapshots. Each team receives only its assigned context; a spectator host receives none. The browser bundle contains no round-bank secret pairs.
 - Imposter selection, answer order, timers, and scoring are database-owned. Room mutations lock the room row to serialize writes.
 - Realtime sends only public room metadata. Clients fetch their authorized snapshot after updates. Five-second polling and focus/network events provide recovery. Presence carries user IDs and online status, never context or answers.

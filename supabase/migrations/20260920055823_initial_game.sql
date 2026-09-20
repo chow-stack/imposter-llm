@@ -7,7 +7,7 @@ create table public.games (
  round_number int not null default 0, revision int not null default 0,
  created_at timestamptz not null default now(), expires_at timestamptz not null default now()+interval '24 hours'
 );
-create table game_private.teams(id uuid primary key default gen_random_uuid(), game_id uuid not null references public.games on delete cascade, name text not null, score int not null default 0);
+create table game_private.teams(id uuid primary key default gen_random_uuid(), game_id uuid not null references public.games on delete cascade, name text not null, name_locked bool not null default false, position int not null check(position between 1 and 5), score int not null default 0, unique(game_id,position));
 create table game_private.players(id uuid not null, game_id uuid not null references public.games on delete cascade, nickname text not null, team_id uuid references game_private.teams, joined_at timestamptz not null default clock_timestamp(), primary key(game_id,id));
 create index on game_private.players(id);
 create index on game_private.players(team_id);
@@ -58,7 +58,7 @@ begin
  select * into b from game_private.bank where id=r.bank_id;
  revealed:=g.phase in ('reveal','scoreboard');
  result:=jsonb_build_object('game',to_jsonb(g),'me',to_jsonb(p),'server_time',clock_timestamp(),
- 'teams',coalesce((select jsonb_agg(to_jsonb(t)||jsonb_build_object('captain_id',(select id from game_private.players where team_id=t.id order by joined_at,id limit 1)) order by t.name) from game_private.teams t where game_id=gid),'[]'::jsonb),
+ 'teams',coalesce((select jsonb_agg(to_jsonb(t)||jsonb_build_object('captain_id',(select id from game_private.players where team_id=t.id order by joined_at,id limit 1)) order by t.position) from game_private.teams t where game_id=gid),'[]'::jsonb),
  'players',coalesce((select jsonb_agg(to_jsonb(pl) order by joined_at) from game_private.players pl where game_id=gid),'[]'::jsonb),
  'bank',(select jsonb_agg(jsonb_build_object('id',id,'title',title,'played',exists(select 1 from game_private.rounds rr where rr.game_id=gid and rr.bank_id=bb.id)) order by id) from game_private.bank bb));
  if r.id is not null then
@@ -81,7 +81,7 @@ revoke all on function public.game_state(uuid) from public,anon;
 grant execute on function public.game_state(uuid) to authenticated;
 
 create function game_private.action(action text,payload jsonb) returns jsonb language plpgsql security definer set search_path='' as $$
-declare uid uuid:=auth.uid(); gid uuid; g public.games; p game_private.players; r game_private.rounds; b game_private.bank; tid uuid; aid uuid; captain uuid; n int; topvotes int; impvotes int; winners int; nick text; roomcode text; k text;
+declare uid uuid:=auth.uid(); gid uuid; g public.games; p game_private.players; r game_private.rounds; b game_private.bank; tid uuid; aid uuid; captain uuid; n int; topvotes int; impvotes int; winners int; nick text; roomcode text; k text; tname text;
 begin
  if uid is null then raise exception 'Sign in first'; end if;
  nick:=btrim(payload->>'nickname');
@@ -95,7 +95,7 @@ begin
   insert into game_private.players(id,game_id,nickname) values(uid,gid,nick);
   n:=coalesce((payload->>'teams')::int,4);
   if n not between 3 and 5 then raise exception 'Choose 3–5 teams'; end if;
-  for i in 1..n loop insert into game_private.teams(game_id,name) values(gid,(array['Token Titans','Context Crew','Neural Nomads','Prompt Society','Attention Please'])[i]); end loop;
+  for i in 1..n loop insert into game_private.teams(game_id,name,position) values(gid,(array['Team 1','Team 2','Team 3','Team 4','Team 5'])[i],i); end loop;
   return game_private.state(gid);
  end if;
  if action='join' then
@@ -120,6 +120,17 @@ begin
   tid:=(payload->>'team_id')::uuid;
   if tid is not null and not exists(select 1 from game_private.teams where id=tid and game_id=gid) then raise exception 'Invalid team'; end if;
   if tid is not null and (select count(*) from game_private.players where team_id=tid and id<>uid)>=4 then raise exception 'This team is full'; end if;
+  if tid is not null and not (select name_locked from game_private.teams where id=tid) then
+   select count(*) into n from game_private.players where team_id=tid;
+   select id into captain from game_private.players where team_id=tid order by joined_at,id limit 1;
+   if n>0 and uid is distinct from captain then raise exception 'The first team member chooses the team name'; end if;
+   tname:=btrim(payload->>'team_name');
+   if tname is null or length(tname) not between 1 and 24 then raise exception 'Use a team name of 1–24 characters'; end if;
+   if exists(select 1 from game_private.teams where game_id=gid and id<>tid and name_locked and lower(name)=lower(tname)) then raise exception 'That team name is already taken'; end if;
+   update game_private.teams set name=tname,name_locked=true where id=tid;
+  elsif tid is not null and payload ? 'team_name' then
+   raise exception 'This team name is already set';
+  end if;
   update game_private.players set team_id=tid,joined_at=clock_timestamp() where game_id=gid and id=uid;
  elsif action in ('answer','vote') then
   select id into captain from game_private.players where team_id=p.team_id order by joined_at,id limit 1;
