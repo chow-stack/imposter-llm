@@ -6,8 +6,9 @@ begin
   h:=gen_random_uuid(); perform set_config('request.jwt.claim.sub',h::text,true);
   s:=public.game_action('create',jsonb_build_object('nickname','Scoring fixture','teams',4));g:=(s->'game'->>'id')::uuid;
   select array_agg(id order by name) into t from game_private.teams where game_id=g;
+  update game_private.teams set name_locked=true where game_id=g;
   for i in 1..4 loop insert into game_private.players(id,game_id,nickname,team_id) values(gen_random_uuid(),g,'Fixture '||i,t[i]); end loop;
-  s:=public.game_action('start',jsonb_build_object('game_id',g,'bank_id',1,'seconds',60));rid:=(s->'round'->>'id')::uuid;
+  s:=public.game_start(jsonb_build_object('game_id',g,'seconds',60));rid:=(s->'round'->>'id')::uuid;
   update game_private.rounds set imposter_team=t[1] where id=rid;
   select array_agg(id order by array_position(t,team_id)) into a from game_private.answers where round_id=rid;
   update game_private.answers set body='Fixture answer.' where round_id=rid;

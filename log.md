@@ -1,5 +1,12 @@
 # Change log
 
+# 2026-09-20 — Ten-round random games and deletable rooms
+
+- Added 10 approved rounds, bringing the active bank to 27.
+- Removed host prompt selection: the host chooses the timer once, and the database selects 10 non-repeating prompts automatically.
+- Prevented the same team from being the imposter in consecutive rounds and added a final winner or tie state after round 10.
+- Added cascading foreign-key behavior so deleting a game removes its dependent teams, players, rounds, assignments, answers, and votes.
+
 ## 2026-09-20
 
 - Built the React/TypeScript/Vite game in the requested imposter-llm folder.
@@ -29,3 +36,9 @@
 - Added server-side captain, lobby, length, uniqueness, capacity, and membership checks through the `game_team` RPC.
 - Added stable team positions and integration coverage for choosing and locking names.
 - Added an insert trigger so the already-deployed room-creation function assigns those positions without requiring an immediate function replacement.
+
+# 2026-09-20 — Quiplash-style round bank
+
+- Replaced the selectable bank with 17 approved short-form rounds and retired all nine original rounds, including Kelley professor and terrible startup.
+- Preserved retired rows for historical rounds while filtering them from new games and rejecting direct attempts to start them.
+- Updated integration and scoring fixtures to use Bad ride.

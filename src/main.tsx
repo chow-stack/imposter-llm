@@ -87,7 +87,6 @@ function App() {
     [draft, setDraft] = useState(""),
     [now, setNow] = useState(Date.now()),
     [offset, setOffset] = useState(0),
-    [bank, setBank] = useState(1),
     [seconds, setSeconds] = useState(75),
     [connected, setConnected] = useState(false),
     [online, setOnline] = useState<string[]>([]),
@@ -147,7 +146,9 @@ function App() {
       const { data, error } =
         action === "team"
           ? await supabase.rpc("game_team", { payload: request })
-          : await supabase.rpc("game_action", { action, payload: request });
+          : action === "start"
+            ? await supabase.rpc("game_start", { payload: request })
+            : await supabase.rpc("game_action", { action, payload: request });
       if (error) throw error;
       accept(data);
       if (action === "create" || action === "join")
@@ -269,7 +270,10 @@ function App() {
     activeTeams =
       state?.teams.filter((t) =>
         state.players.some((p) => p.team_id === t.id),
-      ) || [];
+      ) || [],
+    gameComplete = (state?.game.round_number || 0) >= 10,
+    topScore = Math.max(...activeTeams.map((t) => t.score), 0),
+    winners = activeTeams.filter((t) => t.score === topScore);
   function leave() {
     current.current = null;
     setState(null);
@@ -288,38 +292,33 @@ function App() {
       setError("Copy this room code: " + state?.game.code);
     }
   }
-  const startControls = (
-    <div className="start-controls">
-      <label>
-        Round
-        <select value={bank} onChange={(e) => setBank(+e.target.value)}>
-          {state?.bank.map((b) => (
-            <option key={b.id} value={b.id}>
-              {b.title}
-              {b.played ? " · played" : ""}
-            </option>
-          ))}
-        </select>
-      </label>
-      <label>
-        Writing time
-        <select value={seconds} onChange={(e) => setSeconds(+e.target.value)}>
-          {[60, 75, 90].map((s) => (
-            <option key={s} value={s}>
-              {s} seconds
-            </option>
-          ))}
-        </select>
-      </label>
-      <button
-        disabled={busy || activeTeams.length < 3}
-        className="primary"
-        onClick={() => act("start", { bank_id: bank, seconds })}
-      >
-        Start round <ArrowRight size={18} />
+  const startControls =
+    phase === "lobby" ? (
+      <div className="start-controls">
+        <label>
+          Time per round
+          <select value={seconds} onChange={(e) => setSeconds(+e.target.value)}>
+            {[60, 75, 90].map((s) => (
+              <option key={s} value={s}>
+                {s} seconds
+              </option>
+            ))}
+          </select>
+        </label>
+        <button
+          disabled={busy || activeTeams.length < 3}
+          className="primary"
+          onClick={() => act("start", { seconds })}
+        >
+          Start game <ArrowRight size={18} />
+        </button>
+      </div>
+    ) : (
+      <button disabled={busy} className="primary" onClick={() => act("start")}>
+        Start round {state ? state.game.round_number + 1 : ""}
+        <ArrowRight size={18} />
       </button>
-    </div>
-  );
+    );
   return (
     <>
       <header className={state ? "" : "landing-header"}>
@@ -628,7 +627,7 @@ function App() {
                     <p>
                       {host
                         ? "Stay off a team to host on a shared screen. At least three teams must join."
-                        : "Your host will start the round when everyone is ready."}
+                        : "Your host will choose the timer and start the 10-round game when everyone is ready."}
                     </p>
                   </div>
                   {host && myTeam && (
@@ -650,7 +649,7 @@ function App() {
                     <div className="prompt-panel">
                       <div>
                         <span className="eyebrow">
-                          ROUND {state.game.round_number} · {round.title}
+                          ROUND {state.game.round_number} OF 10 · {round.title}
                         </span>
                         <h2>{round.prompt}</h2>
                       </div>
@@ -964,10 +963,17 @@ function App() {
                         <div className="scoreboard">
                           <Trophy size={36} />
                           <span className="eyebrow">
-                            THE STANDINGS · ROUND {state.game.round_number}
+                            THE STANDINGS · ROUND {state.game.round_number} OF
+                            10
                           </span>
-                          <h2>Award-winning suspicion.</h2>
-                          {[...state.teams]
+                          <h2>
+                            {gameComplete
+                              ? winners.length === 1
+                                ? `${winners[0].name} wins!`
+                                : `${winners.map((t) => t.name).join(" & ")} tie!`
+                              : "Award-winning suspicion."}
+                          </h2>
+                          {[...activeTeams]
                             .sort(
                               (a, b) =>
                                 b.score - a.score ||
@@ -984,7 +990,7 @@ function App() {
                                   {t.score}
                                   <small>pts</small>
                                 </b>
-                                {i === 0 && <Trophy size={20} />}
+                                {t.score === topScore && <Trophy size={20} />}
                               </div>
                             ))}
                         </div>
@@ -995,13 +1001,26 @@ function App() {
                             confidence tell you who had different information?
                           </p>
                         </div>
-                        {host && (
+                        {gameComplete && (
                           <div className="host-panel">
                             <div>
-                              <h3>Another round?</h3>
+                              <h3>Game complete.</h3>
                               <p>
-                                Try AI dating profile, movie review, then campus
-                                survival advice.
+                                Ten rounds down. The highest score takes the
+                                win.
+                              </p>
+                            </div>
+                          </div>
+                        )}
+                        {host && !gameComplete && (
+                          <div className="host-panel">
+                            <div>
+                              <h3>
+                                Ready for round {state.game.round_number + 1}?
+                              </h3>
+                              <p>
+                                The next prompt and imposter will be selected
+                                automatically.
                               </p>
                             </div>
                             {startControls}
@@ -1050,7 +1069,10 @@ function App() {
             <span className="eyebrow">IMPOSTER LLM / FIELD GUIDE</span>
             <h2 id="rules-title">Keep your context close.</h2>
             <ol>
-              <li>Join a team. Your first player is your captain.</li>
+              <li>
+                Join a team. Its first player chooses the name and becomes
+                captain.
+              </li>
               <li>
                 Read the shared prompt and your private context. One team
                 secretly gets a different context.
@@ -1062,6 +1084,10 @@ function App() {
               <li>
                 Vote as a team for the imposter and the funniest answer. You can
                 change votes until the host reveals.
+              </li>
+              <li>
+                Play 10 random prompts. The team with the highest final score
+                wins.
               </li>
             </ol>
             <div className="rules-scores">

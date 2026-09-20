@@ -17,6 +17,15 @@ const chooseTeam = async (c, payload) => {
   assert.equal(error, null, error?.message);
   return data;
 };
+const startGame = async (c, payload) => {
+  const { data, error } = await c.rpc("game_start", { payload });
+  assert.equal(error, null, error?.message);
+  return data;
+};
+const deniedStart = async (c, payload) => {
+  const { error } = await c.rpc("game_start", { payload });
+  assert.ok(error, "game start must be denied");
+};
 const deniedTeam = async (c, payload) => {
   const { error } = await c.rpc("game_team", { payload });
   assert.ok(error, "team change must be denied");
@@ -38,6 +47,23 @@ const [host, a, b, c, outsider] = clients;
 let s = await call(host, "create", { nickname: "Integration host", teams: 3 });
 const gid = s.game.id;
 console.log("Test room:", s.game.code, "id:", gid);
+assert.equal(s.bank.length, 27);
+assert.ok(s.bank.some((round) => round.title === "Bad ride"));
+for (const title of [
+  "Bad cake",
+  "Confiscated",
+  "Wrong soundtrack",
+  "Do not touch",
+  "Suspicious smell",
+  "Free sample",
+  "Forgot to pack",
+  "Waiting room",
+  "Lost and found",
+  "Denied entry",
+])
+  assert.ok(s.bank.some((round) => round.title === title));
+assert.ok(!s.bank.some((round) => round.title === "Kelley professor"));
+assert.ok(!s.bank.some((round) => round.title === "Terrible startup"));
 const players = [a, b, c];
 const teamNames = ["Context Bandits", "Token Goblins", "Prompt Pirates"];
 for (let i = 0; i < 3; i++) {
@@ -71,7 +97,8 @@ assert.ok(
   (await a.from("games").update({ phase: "reveal" }).eq("id", gid)).error,
 );
 assert.ok((await a.schema("game_private").from("rounds").select("*")).error);
-await denied(a, "start", { game_id: gid, bank_id: 1, seconds: 60 });
+await deniedStart(a, { game_id: gid, seconds: 60 });
+await denied(host, "start", { game_id: gid, bank_id: 10, seconds: 60 });
 let changes = 0;
 const channel = a.channel("integration:" + gid).on(
   "postgres_changes",
@@ -95,14 +122,19 @@ await new Promise((resolve, reject) => {
     }
   });
 });
-s = await call(host, "start", { game_id: gid, bank_id: 1, seconds: 60 });
+s = await startGame(host, { game_id: gid, seconds: 60 });
+assert.equal(s.game.round_seconds, 60);
+assert.ok(s.bank.some((bankRound) => bankRound.played));
 assert.equal(s.round.context, null);
 assert.equal(s.round.imposter_team, undefined);
 assert.equal(s.round.normal_context, undefined);
 assert.deepEqual(s.round.answers, []);
 const writing = await Promise.all(players.map(snapshot));
-const imposters = writing
-  .map((x, i) => (x.round.context.includes("raccoon") ? i : -1))
+const contexts = writing.map((x) => x.round.context);
+const imposters = contexts
+  .map((context, i) =>
+    contexts.filter((candidate) => candidate === context).length === 1 ? i : -1,
+  )
   .filter((i) => i >= 0);
 assert.equal(imposters.length, 1);
 for (let i = 0; i < 3; i++) {

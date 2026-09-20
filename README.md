@@ -28,13 +28,12 @@ Vercel responses include a Content Security Policy limiting scripts to the app o
 1. Host a room with 3–5 teams; four or five is ideal for a 20-member club.
 2. Share the code or copied room link. Players enter nicknames and pick teams (up to four players each). The first person to join an empty team chooses its permanent name for that game.
 3. That first person is also the team captain, who submits answers and both votes. One device per team also works. The host can remain a spectator for a shared screen.
-4. Select one of the nine source rounds and a 60, 75, or 90-second timer.
+4. Select a 60, 75, or 90-second writing timer and start the game. The database randomly chooses 10 different prompts from the 27-round bank.
 5. Teams privately reveal their context and submit 1–2 sentences (320-character cap). Captains can revise until the server deadline. Drafts survive refresh on the same device.
 6. After the timer, the host opens voting. All answers appear in a stable, randomized order without team identities.
 7. Each captain casts one imposter vote and one funniest vote; no self-votes. Choices can change until reveal.
-8. The host reveals identities, both contexts, totals, and scores, then advances to the scoreboard and another round.
-
-Suggested sequence: IU mascot → AI dating profile → movie review or apology text → campus survival advice.
+8. The host reveals identities, both contexts, totals, and scores, then advances to the scoreboard and next random round.
+9. Each round randomly selects a different imposter from the previous round. After round 10, the team or tied teams with the highest score win.
 
 ### Scoring decisions
 
@@ -54,12 +53,12 @@ The brief did not define ties, missing answers, or zero-vote outcomes; these exp
 - React + TypeScript + Vite; Supabase Anonymous Auth, Postgres, RLS, RPCs, Realtime database changes, and Presence.
 - `public.games` contains only room metadata and a revision counter. RLS restricts reads to members.
 - `game_private` contains the round bank, teams, players, assignments, rounds, answers, and votes. Tables have RLS and no client table grants.
-- Public `game_action`, `game_team`, and `game_state` functions are invoker wrappers around private, narrowly authorized functions. The private functions validate `auth.uid()`, membership, captain/host authority, phase, timer, team-name ownership, and vote targets. All functions pin their search paths and deny unauthenticated execution.
+- Public `game_action`, `game_start`, `game_team`, and `game_state` functions are invoker wrappers around private, narrowly authorized functions. The private functions validate `auth.uid()`, membership, captain/host authority, phase, timer, team-name ownership, and vote targets. All functions pin their search paths and deny unauthenticated execution.
 - Secret contexts and imposter identity never appear in pre-reveal room snapshots. Each team receives only its assigned context; a spectator host receives none. The browser bundle contains no round-bank secret pairs.
-- Imposter selection, answer order, timers, and scoring are database-owned. Room mutations lock the room row to serialize writes.
+- Prompt selection, non-repeating consecutive imposter selection, answer order, timers, the 10-round limit, and scoring are database-owned. Room mutations lock the room row to serialize writes.
 - Realtime sends only public room metadata. Clients fetch their authorized snapshot after updates. Five-second polling and focus/network events provide recovery. Presence carries user IDs and online status, never context or answers.
 - Same-browser sessions and room IDs persist locally. Clearing browser data or changing devices loses the anonymous identity; reconnect on the original device whenever possible.
-- Rooms expire after 24 hours. Expiry blocks game actions and snapshots; physical retention is separate. Administrators can periodically delete expired `public.games` rows, which cascade to game data. Anonymous Auth users also require periodic administrative cleanup if desired.
+- Rooms expire after 24 hours. Expiry blocks game actions and snapshots; physical retention is separate. Deleting a `public.games` row cascades through players, teams, rounds, assignments, answers, and votes. Anonymous Auth users still require separate administrative cleanup if desired.
 - The UI asks before resetting a room. A host may reveal before everyone votes; the screen shows both vote counts.
 
 ## Supabase setup / migrations
@@ -76,7 +75,7 @@ npm audit
 npm test
 ```
 
-`npm test` uses the configured live project, creates five anonymous test identities and a room, runs a real 60-second round, checks positive and negative authorization paths, reconnection, Realtime, hidden data, late submissions, voting, scoring, and reset. It needs network access and Anonymous Auth. Test room metadata remains until expiry/administrative cleanup. Run `tests/scoring.sql` as an administrator for five additional scoring fixtures; its transaction rolls back everything.
+`npm test` uses the configured live project, creates five anonymous test identities and a room, runs a real 60-second round, checks the random-start path, positive and negative authorization paths, reconnection, Realtime, hidden data, late submissions, voting, scoring, and reset. It needs network access and Anonymous Auth. Test room metadata remains until expiry/administrative cleanup. Run `tests/scoring.sql` as an administrator for five additional scoring fixtures; its transaction rolls back everything.
 
 `tests/preview-players.mjs CODE` joins three API-driven test captains to a manually created preview room for visual QA, submits sample answers and votes, and exits at scoreboard. It is a developer helper, not a game feature.
 
@@ -92,6 +91,6 @@ This repository is deployment-ready; it has not been published automatically.
 
 ## Design and source
 
-Game requirements: the live-read `Personal/wiki/gen-ai-club-meeting-2-ai-technicals.md` activity brief, 2026-09-20. All nine prompt/context pairs are included.
+Game requirements: the live-read `Personal/wiki/gen-ai-club-meeting-2-ai-technicals.md` activity brief, 2026-09-20. The selectable bank contains 27 approved prompt/context pairs; each game uses 10 of them without repetition. Retired rounds remain only for historical round integrity.
 
 The landing page contains only the join/host form and a small brand header. It uses the supplied Quizlet reference’s quiet canvas, white cards, and pill actions with [Gen AI at IU](https://genaiiu.com/) branding, inspected 2026-09-20: crimson `hsl(355 70% 35%)`, cream `hsl(30 25% 96%)`, DM Sans body type, and Playfair Display headings. The layout is responsive, keyboard-operable, and respects reduced motion. Fonts load from Google Fonts with system fallbacks.
