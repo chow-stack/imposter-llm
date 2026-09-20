@@ -936,7 +936,7 @@ function App() {
                     </div>
                   </div>
                   <div className="dock">
-                    {captain ? (
+                    {captain && (
                       <button
                         className="btn btn-light btn-xl btn-block"
                         disabled={busy || !draft.trim() || remaining === 0}
@@ -945,16 +945,13 @@ function App() {
                         {round.my_answer ? "Update answer" : "Submit answer"}
                         <ArrowRight size={22} />
                       </button>
-                    ) : (
-                      <p className="dock-note">
-                        Your captain submits for the team. Talk it through
-                        together.
-                      </p>
                     )}
                     <p className="dock-note">
-                      {remaining
-                        ? "You can revise until the timer ends."
-                        : "Time is up. Waiting for the host to open voting."}
+                      {!remaining
+                        ? "Time is up. Waiting for the host to open voting."
+                        : captain
+                          ? "You can revise until the timer ends."
+                          : "Your captain submits for the team. Talk it through together."}
                     </p>
                   </div>
                 </>
@@ -1146,9 +1143,6 @@ function App() {
               </p>
               <p>
                 <b>+2</b> Imposter avoids the most votes
-              </p>
-              <p>
-                <b>+1</b> Imposter leaves one other team with the most votes
               </p>
             </div>
             <p className="fine">

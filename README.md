@@ -39,7 +39,6 @@ Vercel responses include a Content Security Policy limiting scripts to the app o
 
 - +1 per team correctly identifying the imposter.
 - +2 to the imposter when it receives fewer votes than the most-voted answer.
-- +1 extra to that escaping imposter if exactly one other team receives the most votes.
 - A top-vote tie involving the imposter counts as detection.
 - No deduction votes means no escape points. An imposter that submits nothing cannot earn escape points.
 - Missing answers appear as “No answer submitted” and cannot receive votes.

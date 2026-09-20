@@ -1,5 +1,12 @@
 # Change log
 
+# 2026-09-20 — Removed scapegoat bonus; desktop layouts
+
+- Removed the +1 bonus for an escaping imposter that leaves exactly one other team with the most votes. Scoring is now +1 per team that identifies the imposter and +2 to an imposter that receives fewer votes than the top answer.
+- Added migration `20260920220000_remove_scapegoat_bonus.sql` (replaces `game_private.action`; only the reveal branch changed) and applied it to the linked Supabase project. Updated the rules sheet, README, and `tests/scoring.sql` (scenario 1 now expects 2). All five scoring fixtures pass against the live function.
+- Player layout is now responsive: phone column below 720px, wider stacked layout on tablets, and a two-column writing screen, four-column team picker, and 2×2 / 3+2 answer grid from 960px. The host stage gets a wider container on 1600px+ screens and a wider podium.
+- Verified at 390, 820×1180, 1024×768, 1280×720, 1440×900, and 1920×1080 with no horizontal overflow, including five-team rooms and a 200-character answer.
+
 # 2026-09-20 — Kahoot-style redesign
 
 - Replaced the light dashboard look with a crimson party-game field, cream cards, and five vibrant team tones (the original peach, sage, lavender, butter, and sky hues at full saturation). Font changed from DM Sans to Rubik.
