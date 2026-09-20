@@ -18,3 +18,7 @@
 - Added a pre-build credential scanner and Vite configuration validation that rejects privileged keys and unexpected client environment variables.
 - Added Vercel Content Security Policy and Permissions Policy. Verified live RLS on all eight tables and no direct private-table grants; only authenticated room members can read public room metadata.
 - Updated setup and GitHub instructions to explain that the browser publishable key is intentionally public, while secret keys never belong in the client or Git.
+
+## 2026-09-20 — Vercel build fix
+
+- Vite now exposes only `VITE_SUPABASE_*` variables (`envPrefix`) and ignores other `VITE_*` variables such as those Vercel injects, instead of failing the build. A stray `VITE_SUPABASE_*` variable still fails and the error names it. Verified extra variables do not reach the bundle.

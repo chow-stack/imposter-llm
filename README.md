@@ -11,7 +11,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-Open http://localhost:5173. `.env.example` intentionally contains blank values. Keep the real project URL and publishable key in ignored `.env.local` or in Vercel's environment settings. Never put a service-role key, secret key, database password, or access token in any `VITE_` variable. The build rejects non-publishable keys and unexpected `VITE_` variables.
+Open http://localhost:5173. `.env.example` intentionally contains blank values. Keep the real project URL and publishable key in ignored `.env.local` or in Vercel's environment settings. Never put a service-role key, secret key, database password, or access token in any `VITE_` variable. Only `VITE_SUPABASE_*` variables are ever exposed to the browser; other `VITE_*` variables (such as ones Vercel injects) are ignored. The build rejects non-publishable keys and any `VITE_SUPABASE_*` variable other than those two.
 
 ## Before pushing to GitHub
 
