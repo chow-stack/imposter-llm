@@ -1,5 +1,10 @@
 # Change log
 
+# 2026-09-20 — Four additional rounds
+
+- Added Last thing you want to hear, Hidden inside, Everyone went silent, and One-star attraction.
+- Expanded the active bank from 27 to 31 prompts.
+
 # 2026-09-20 — Ten-round random games and deletable rooms
 
 - Added 10 approved rounds, bringing the active bank to 27.

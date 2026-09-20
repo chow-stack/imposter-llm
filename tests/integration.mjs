@@ -47,7 +47,7 @@ const [host, a, b, c, outsider] = clients;
 let s = await call(host, "create", { nickname: "Integration host", teams: 3 });
 const gid = s.game.id;
 console.log("Test room:", s.game.code, "id:", gid);
-assert.equal(s.bank.length, 27);
+assert.equal(s.bank.length, 31);
 assert.ok(s.bank.some((round) => round.title === "Bad ride"));
 for (const title of [
   "Bad cake",
@@ -60,6 +60,10 @@ for (const title of [
   "Waiting room",
   "Lost and found",
   "Denied entry",
+  "Last thing you want to hear",
+  "Hidden inside",
+  "Everyone went silent",
+  "One-star attraction",
 ])
   assert.ok(s.bank.some((round) => round.title === title));
 assert.ok(!s.bank.some((round) => round.title === "Kelley professor"));

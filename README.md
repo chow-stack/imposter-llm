@@ -28,7 +28,7 @@ Vercel responses include a Content Security Policy limiting scripts to the app o
 1. Host a room with 3–5 teams; four or five is ideal for a 20-member club.
 2. Share the code or copied room link. Players enter nicknames and pick teams (up to four players each). The first person to join an empty team chooses its permanent name for that game.
 3. That first person is also the team captain, who submits answers and both votes. One device per team also works. The host can remain a spectator for a shared screen.
-4. Select a 60, 75, or 90-second writing timer and start the game. The database randomly chooses 10 different prompts from the 27-round bank.
+4. Select a 60, 75, or 90-second writing timer and start the game. The database randomly chooses 10 different prompts from the 31-round bank.
 5. Teams privately reveal their context and submit 1–2 sentences (320-character cap). Captains can revise until the server deadline. Drafts survive refresh on the same device.
 6. After the timer, the host opens voting. All answers appear in a stable, randomized order without team identities.
 7. Each captain casts one imposter vote and one funniest vote; no self-votes. Choices can change until reveal.
@@ -91,6 +91,6 @@ This repository is deployment-ready; it has not been published automatically.
 
 ## Design and source
 
-Game requirements: the live-read `Personal/wiki/gen-ai-club-meeting-2-ai-technicals.md` activity brief, 2026-09-20. The selectable bank contains 27 approved prompt/context pairs; each game uses 10 of them without repetition. Retired rounds remain only for historical round integrity.
+Game requirements: the live-read `Personal/wiki/gen-ai-club-meeting-2-ai-technicals.md` activity brief, 2026-09-20. The selectable bank contains 31 approved prompt/context pairs; each game uses 10 of them without repetition. Retired rounds remain only for historical round integrity.
 
 The landing page contains only the join/host form and a small brand header. It uses the supplied Quizlet reference’s quiet canvas, white cards, and pill actions with [Gen AI at IU](https://genaiiu.com/) branding, inspected 2026-09-20: crimson `hsl(355 70% 35%)`, cream `hsl(30 25% 96%)`, DM Sans body type, and Playfair Display headings. The layout is responsive, keyboard-operable, and respects reduced motion. Fonts load from Google Fonts with system fallbacks.
