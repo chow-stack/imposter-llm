@@ -27,12 +27,12 @@ Vercel responses include a Content Security Policy limiting scripts to the app o
 
 1. Host a room with 3–5 teams; four or five is ideal for a 20-member club.
 2. Share the code or copied room link. Players enter nicknames and pick teams (up to four players each). The first person to join an empty team chooses its permanent name for that game.
-3. That first person is also the team captain, who submits answers and both votes. One device per team also works. The host can remain a spectator for a shared screen.
+3. That first person is also the team captain, who submits answers and the team vote. One device per team also works. The host can remain a spectator for a shared screen.
 4. Select a 60, 75, or 90-second writing timer and start the game. The database randomly chooses 10 different prompts from the 31-round bank.
 5. Teams privately reveal their context and submit 1–2 sentences (320-character cap). Captains can revise until the server deadline. Drafts survive refresh on the same device.
-6. After the timer, the host opens voting. All answers appear in a stable, randomized order without team identities.
-7. Each captain casts one imposter vote and one funniest vote; no self-votes. Choices can change until reveal.
-8. The host reveals identities, both contexts, totals, and scores, then advances to the scoreboard and next random round.
+6. The host opens voting after the timer, or immediately after every team submits. All answers appear in a stable, randomized order without team identities.
+7. Each captain casts one imposter vote; no self-votes. Choices can change until reveal.
+8. The host reveals identities, both contexts, vote totals, and scores, then advances to the scoreboard and next random round.
 9. Each round randomly selects a different imposter from the previous round. After round 10, the team or tied teams with the highest score win.
 
 ### Scoring decisions
@@ -40,7 +40,6 @@ Vercel responses include a Content Security Policy limiting scripts to the app o
 - +1 per team correctly identifying the imposter.
 - +2 to the imposter when it receives fewer votes than the most-voted answer.
 - +1 extra to that escaping imposter if exactly one other team receives the most votes.
-- +1 to the funniest answer. Tied funniest answers each earn a point.
 - A top-vote tie involving the imposter counts as detection.
 - No deduction votes means no escape points. An imposter that submits nothing cannot earn escape points.
 - Missing answers appear as “No answer submitted” and cannot receive votes.
@@ -59,7 +58,8 @@ The brief did not define ties, missing answers, or zero-vote outcomes; these exp
 - Realtime sends only public room metadata. Clients fetch their authorized snapshot after updates. Five-second polling and focus/network events provide recovery. Presence carries user IDs and online status, never context or answers.
 - Same-browser sessions and room IDs persist locally. Clearing browser data or changing devices loses the anonymous identity; reconnect on the original device whenever possible.
 - Rooms expire after 24 hours. Expiry blocks game actions and snapshots; physical retention is separate. Deleting a `public.games` row cascades through players, teams, rounds, assignments, answers, and votes. Anonymous Auth users still require separate administrative cleanup if desired.
-- The UI asks before resetting a room. A host may reveal before everyone votes; the screen shows both vote counts.
+- The UI asks before resetting a room. A host may reveal before everyone votes.
+- An empty-room host can create three test teams. Test mode can fill answers and votes so one person can walk through every game stage; reset removes the synthetic players.
 
 ## Supabase setup / migrations
 
@@ -75,7 +75,7 @@ npm audit
 npm test
 ```
 
-`npm test` uses the configured live project, creates five anonymous test identities and a room, runs a real 60-second round, checks the random-start path, positive and negative authorization paths, reconnection, Realtime, hidden data, late submissions, voting, scoring, and reset. It needs network access and Anonymous Auth. Test room metadata remains until expiry/administrative cleanup. Run `tests/scoring.sql` as an administrator for five additional scoring fixtures; its transaction rolls back everything.
+`npm test` uses the configured live project, creates five anonymous test identities and a room, checks the random-start path, positive and negative authorization paths, reconnection, Realtime, hidden data, early voting after all submissions, voting, scoring, reset, and the host-only solo test flow. It needs network access and Anonymous Auth. Test room metadata remains until expiry/administrative cleanup. Run `tests/scoring.sql` as an administrator for five additional scoring fixtures; its transaction rolls back everything.
 
 `tests/preview-players.mjs CODE` joins three API-driven test captains to a manually created preview room for visual QA, submits sample answers and votes, and exits at scoreboard. It is a developer helper, not a game feature.
 
@@ -93,4 +93,4 @@ This repository is deployment-ready; it has not been published automatically.
 
 Game requirements: the live-read `Personal/wiki/gen-ai-club-meeting-2-ai-technicals.md` activity brief, 2026-09-20. The selectable bank contains 31 approved prompt/context pairs; each game uses 10 of them without repetition. Retired rounds remain only for historical round integrity.
 
-The landing page contains only the join/host form and a small brand header. It uses the supplied Quizlet reference’s quiet canvas, white cards, and pill actions with [Gen AI at IU](https://genaiiu.com/) branding, inspected 2026-09-20: crimson `hsl(355 70% 35%)`, cream `hsl(30 25% 96%)`, DM Sans body type, and Playfair Display headings. The layout is responsive, keyboard-operable, and respects reduced motion. Fonts load from Google Fonts with system fallbacks.
+The landing page contains only the join/host form and a small brand header. The interface uses a restrained crimson-and-neutral palette, one DM Sans type family, clear status cards, and fewer decorative instructions. The layout is responsive, keyboard-operable, and respects reduced motion. Fonts load from Google Fonts with system fallbacks.

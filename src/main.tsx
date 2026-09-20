@@ -1,21 +1,25 @@
-import { useEffect, useRef, useState } from "react";
+import {
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type ReactNode,
+} from "react";
 import { createRoot } from "react-dom/client";
 import { createClient } from "@supabase/supabase-js";
 import {
   ArrowRight,
   Check,
-  ChevronRight,
   Copy,
+  Crown,
   Eye,
-  EyeOff,
   Fingerprint,
+  FlaskConical,
   HelpCircle,
   LockKeyhole,
+  Menu,
   RotateCcw,
-  Smile,
-  Timer,
   Trophy,
-  Users,
   X,
 } from "lucide-react";
 import "./style.css";
@@ -39,7 +43,6 @@ type Answer = {
   team_id?: string;
   is_imposter?: boolean;
   votes?: number;
-  funny_votes?: number;
 };
 type State = {
   game: {
@@ -49,6 +52,7 @@ type State = {
     phase: string;
     round_number: number;
     revision: number;
+    test_mode: boolean;
   };
   me: Player;
   players: Player[];
@@ -64,7 +68,6 @@ type State = {
     my_answer: string;
     submitted: number;
     votes_cast: number;
-    funny_votes_cast: number;
     my_votes: Record<string, string>;
     answers: Answer[];
     normal_context?: string;
@@ -82,7 +85,7 @@ function App() {
     [teams, setTeams] = useState(4),
     [busy, setBusy] = useState(false),
     [error, setError] = useState(""),
-    [rules, setRules] = useState(false),
+    [panel, setPanel] = useState<null | "rules" | "menu" | "reset">(null),
     [secret, setSecret] = useState(false),
     [draft, setDraft] = useState(""),
     [now, setNow] = useState(Date.now()),
@@ -91,7 +94,6 @@ function App() {
     [connected, setConnected] = useState(false),
     [online, setOnline] = useState<string[]>([]),
     [copied, setCopied] = useState(false),
-    [reset, setReset] = useState(false),
     [teamNames, setTeamNames] = useState<Record<string, string>>({});
   const lastRound = useRef(""),
     current = useRef<State | null>(null),
@@ -153,7 +155,7 @@ function App() {
       accept(data);
       if (action === "create" || action === "join")
         localStorage.setItem("imposter-nickname", nick);
-      if (action === "reset") setReset(false);
+      if (action === "reset") setPanel(null);
     } catch (e) {
       setError(
         e instanceof Error
@@ -223,13 +225,10 @@ function App() {
     };
   }, [state?.game.id]);
   useEffect(() => {
-    if (!rules && !reset) return;
+    if (!panel) return;
     const previous = document.activeElement as HTMLElement | null;
     const handler = (e: KeyboardEvent) => {
-      if (e.key === "Escape") {
-        setRules(false);
-        setReset(false);
-      }
+      if (e.key === "Escape") setPanel(null);
       if (e.key === "Tab") {
         const dialog = document.querySelector("[role=dialog]");
         const nodes = dialog?.querySelectorAll<HTMLElement>(
@@ -252,7 +251,7 @@ function App() {
       document.removeEventListener("keydown", handler);
       previous?.focus();
     };
-  }, [rules, reset]);
+  }, [panel]);
   useEffect(() => {
     window.scrollTo({ top: 0 });
   }, [state?.game.phase]);
@@ -273,7 +272,10 @@ function App() {
       ) || [],
     gameComplete = (state?.game.round_number || 0) >= 10,
     topScore = Math.max(...activeTeams.map((t) => t.score), 0),
-    winners = activeTeams.filter((t) => t.score === topScore);
+    winners = activeTeams.filter((t) => t.score === topScore),
+    allSubmitted = Boolean(
+      round && activeTeams.length > 0 && round.submitted === activeTeams.length,
+    );
   function leave() {
     current.current = null;
     setState(null);
@@ -292,783 +294,831 @@ function App() {
       setError("Copy this room code: " + state?.game.code);
     }
   }
-  const startControls =
-    phase === "lobby" ? (
-      <div className="start-controls">
-        <label>
-          Time per round
-          <select value={seconds} onChange={(e) => setSeconds(+e.target.value)}>
-            {[60, 75, 90].map((s) => (
-              <option key={s} value={s}>
-                {s} seconds
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          disabled={busy || activeTeams.length < 3}
-          className="primary"
-          onClick={() => act("start", { seconds })}
-        >
-          Start game <ArrowRight size={18} />
-        </button>
-      </div>
-    ) : (
-      <button disabled={busy} className="primary" onClick={() => act("start")}>
-        Start round {state ? state.game.round_number + 1 : ""}
-        <ArrowRight size={18} />
-      </button>
+  const TONES = 5,
+    orderedTeams = [...(state?.teams || [])].sort(
+      (a, b) => a.position - b.position,
+    ),
+    toneOf = (id?: string) =>
+      Math.max(
+        0,
+        orderedTeams.findIndex((t) => t.id === id),
+      ) % TONES,
+    teamName = (id?: string) => state?.teams.find((t) => t.id === id)?.name,
+    ranked = [...activeTeams].sort(
+      (a, b) => b.score - a.score || a.name.localeCompare(b.name),
+    ),
+    rankOf = (t: Team) => ranked.findIndex((x) => x.score === t.score) + 1,
+    playerCount =
+      state?.players.filter((p) => p.id !== state.game.host_id).length || 0,
+    joinable = state?.players.filter(
+      (p) => !p.team_id && p.id !== state.game.host_id,
     );
-  return (
-    <>
-      <header className={state ? "" : "landing-header"}>
-        <div className="nav">
-          <a className="brand" href="/" aria-label="Imposter LLM home">
-            <span className="brand-mark">
-              <Fingerprint size={25} />
-            </span>
-            <span>
-              imposter<span className="brand-llm"> / llm</span>
-            </span>
-          </a>
-          <span className="club-label">
-            GEN AI <span>AT INDIANA UNIVERSITY</span>
-          </span>
-          {state && (
-            <button className="text-button" onClick={() => setRules(true)}>
-              <HelpCircle size={17} /> How to play
-            </button>
-          )}
-        </div>
-      </header>
-      <main>
-        {error && (
-          <div role="alert" className="error">
-            {error}
-            <button aria-label="Dismiss error" onClick={() => setError("")}>
-              <X size={16} />
-            </button>
-          </div>
-        )}
-        {!state ? (
-          <div className="landing">
-            <section className="entry-card" aria-label="Join or host a game">
-              <div className="tabs">
-                <button
-                  className={mode === "join" ? "active" : ""}
-                  aria-pressed={mode === "join"}
-                  onClick={() => setMode("join")}
-                >
-                  Join a room
-                </button>
-                <button
-                  className={mode === "create" ? "active" : ""}
-                  aria-pressed={mode === "create"}
-                  onClick={() => setMode("create")}
-                >
-                  Host a game
-                </button>
-              </div>
-              <div className="entry-body">
-                <h1>{mode === "join" ? "Join a room" : "Host a game"}</h1>
-                <p>
-                  {mode === "join"
-                    ? "Enter your name and the code from your host."
-                    : "Create a room and invite your teams."}
-                </p>
-                <form
-                  onSubmit={(e) => {
-                    e.preventDefault();
-                    act(mode === "join" ? "join" : "create", {
-                      nickname: nick,
-                      code,
-                      teams,
-                    });
-                  }}
-                >
-                  <label>
-                    Your name
-                    <input
-                      autoComplete="nickname"
-                      autoCapitalize="words"
-                      placeholder="Your name"
-                      value={nick}
-                      maxLength={24}
-                      required
-                      onChange={(e) => setNick(e.target.value)}
-                    />
-                  </label>
-                  {mode === "join" ? (
-                    <label>
-                      Room code
-                      <input
-                        className="code-input"
-                        autoComplete="off"
-                        autoCapitalize="characters"
-                        spellCheck={false}
-                        placeholder="ABC123"
-                        value={code}
-                        minLength={6}
-                        maxLength={6}
-                        pattern="[A-Za-z0-9]{6}"
-                        required
-                        onChange={(e) => setCode(e.target.value.toUpperCase())}
-                      />
-                    </label>
-                  ) : (
-                    <label>
-                      Number of teams
-                      <select
-                        value={teams}
-                        onChange={(e) => setTeams(+e.target.value)}
-                      >
-                        <option value="3">3 teams · small group</option>
-                        <option value="4">4 teams · club favorite</option>
-                        <option value="5">5 teams · full house</option>
-                      </select>
-                    </label>
-                  )}
-                  <button className="primary wide" disabled={busy}>
-                    {busy
-                      ? "Connecting…"
-                      : mode === "join"
-                        ? "Join the game"
-                        : "Create a room"}
-                    <ArrowRight size={18} />
-                  </button>
-                </form>
-              </div>
-            </section>
-          </div>
-        ) : (
-          <div className="game-page">
-            <div className="room-top">
-              <div>
-                <div className="eyebrow">
-                  {host ? "HOST DESK" : myTeam?.name || "WELCOME TO THE ROOM"}
-                </div>
-                <h1>
-                  {phase === "lobby"
-                    ? "Assemble your suspects."
-                    : phase === "writing"
-                      ? "Make it believable."
-                      : phase === "voting"
-                        ? "Who’s hiding something?"
-                        : phase === "reveal"
-                          ? "The context is out."
-                          : "A little friendly competition."}
-                </h1>
-              </div>
-              <button className="room-code" onClick={copy}>
-                <span>ROOM CODE</span>
-                <strong>{state.game.code}</strong>
-                {copied ? <Check size={18} /> : <Copy size={18} />}
-              </button>
-            </div>
-            <div className="phase-bar">
-              {["lobby", "writing", "voting", "reveal", "scoreboard"].map(
-                (p, i) => (
-                  <span key={p} className={p === phase ? "current" : ""}>
-                    <b>{i + 1}</b>
-                    {p}
-                    <ChevronRight size={14} />
-                  </span>
-                ),
-              )}
-              <small
-                className={connected ? "connection" : "connection offline"}
-              >
-                <span className="live-dot" />
-                {connected ? "Live" : "Reconnecting…"}
-              </small>
-            </div>
-            {phase === "lobby" ? (
-              <>
-                <div className="section-title">
-                  <div>
-                    <h2>Find your people.</h2>
-                    <p>
-                      Up to four players per team. The first to join becomes
-                      captain.
-                    </p>
-                  </div>
-                  <span className="badge">
-                    {state.players.length} players · {activeTeams.length} teams
-                    ready
-                  </span>
-                </div>
-                <div className="team-grid">
-                  {[...state.teams]
-                    .sort((a, b) => a.position - b.position)
-                    .map((t, i) => {
-                      const members = state.players.filter(
-                          (p) => p.team_id === t.id,
-                        ),
-                        canName =
-                          !t.name_locked &&
-                          (members.length === 0 ||
-                            (myTeam?.id === t.id && captain)),
-                        chosenName = teamNames[t.id] || "";
-                      return (
-                        <article
-                          className={
-                            "team-card " +
-                            (myTeam?.id === t.id ? "selected" : "")
-                          }
-                          key={t.id}
-                        >
-                          <span className={"team-symbol tone-" + i}>
-                            <Users size={24} />
-                          </span>
-                          <h3>
-                            {t.name_locked ? t.name : `Team ${t.position}`}
-                          </h3>
-                          {canName && (
-                            <label>
-                              Team name
-                              <input
-                                autoCapitalize="words"
-                                maxLength={24}
-                                placeholder="The Context Bandits"
-                                value={chosenName}
-                                onChange={(e) =>
-                                  setTeamNames((names) => ({
-                                    ...names,
-                                    [t.id]: e.target.value,
-                                  }))
-                                }
-                              />
-                            </label>
-                          )}
-                          {!t.name_locked && members.length > 0 && !canName && (
-                            <p className="muted">
-                              The captain is choosing this team’s name.
-                            </p>
-                          )}
-                          <div className="member-list">
-                            {members.map((p) => (
-                              <div key={p.id}>
-                                <span
-                                  className={
-                                    "presence " +
-                                    (online.includes(p.id) ? "here" : "")
-                                  }
-                                />
-                                {p.nickname}
-                                {p.id === t.captain_id && (
-                                  <span className="small">captain</span>
-                                )}
-                              </div>
-                            ))}
-                            {!members.length && (
-                              <p className="muted">A fresh set of suspects.</p>
-                            )}
-                          </div>
-                          <button
-                            disabled={
-                              busy ||
-                              (myTeam?.id === t.id && t.name_locked) ||
-                              members.length >= 4 ||
-                              (!t.name_locked &&
-                                (!canName || !chosenName.trim()))
-                            }
-                            className={
-                              myTeam?.id === t.id
-                                ? "outline selected-button"
-                                : "outline"
-                            }
-                            onClick={() =>
-                              act("team", {
-                                team_id: t.id,
-                                ...(!t.name_locked
-                                  ? { team_name: chosenName }
-                                  : {}),
-                              })
-                            }
-                          >
-                            {myTeam?.id === t.id && t.name_locked ? (
-                              <>
-                                <Check size={16} /> Your team
-                              </>
-                            ) : myTeam?.id === t.id ? (
-                              "Save team name"
-                            ) : !t.name_locked ? (
-                              "Name and join team"
-                            ) : (
-                              "Join team"
-                            )}
-                          </button>
-                        </article>
-                      );
-                    })}
-                </div>
-                {state.players.some((p) => !p.team_id) && (
-                  <p className="small">
-                    In the room:{" "}
-                    {state.players
-                      .filter((p) => !p.team_id)
-                      .map(
-                        (p) =>
-                          p.nickname +
-                          (p.id === state.game.host_id
-                            ? " (host)"
-                            : " (choosing a team)"),
-                      )
-                      .join(", ")}
-                  </p>
-                )}
-                <div className="host-panel">
-                  <div>
-                    <h3>
-                      {host
-                        ? "You set the scene."
-                        : "Make yourselves comfortable."}
-                    </h3>
-                    <p>
-                      {host
-                        ? "Stay off a team to host on a shared screen. At least three teams must join."
-                        : "Your host will choose the timer and start the 10-round game when everyone is ready."}
-                    </p>
-                  </div>
-                  {host && myTeam && (
-                    <button
-                      className="outline"
-                      disabled={busy}
-                      onClick={() => act("team", { team_id: null })}
-                    >
-                      Host without a team
-                    </button>
-                  )}
-                  {host && startControls}
-                </div>
-              </>
-            ) : (
-              <>
-                {round && (
-                  <>
-                    <div className="prompt-panel">
-                      <div>
-                        <span className="eyebrow">
-                          ROUND {state.game.round_number} OF 10 · {round.title}
-                        </span>
-                        <h2>{round.prompt}</h2>
-                      </div>
-                      {phase === "writing" && (
-                        <div
-                          className={
-                            "timer " + (remaining <= 10 ? "urgent" : "")
-                          }
-                        >
-                          <Timer size={20} />
-                          <strong>
-                            {Math.floor(remaining / 60)}:
-                            {String(remaining % 60).padStart(2, "0")}
-                          </strong>
-                          <small>
-                            {remaining ? "time to write" : "pens down"}
-                          </small>
-                        </div>
-                      )}
-                    </div>
-                    {phase === "writing" && (
-                      <>
-                        <div className="writing-grid">
-                          <section className="private-card">
-                            <LockKeyhole size={24} />
-                            <span className="eyebrow">
-                              FOR YOUR TEAM’S EYES ONLY
-                            </span>
-                            <h2>
-                              {myTeam
-                                ? "A little inside information."
-                                : "You’re running the show."}
-                            </h2>
-                            {myTeam ? (
-                              <>
-                                <button
-                                  className="outline"
-                                  onClick={() => setSecret(!secret)}
-                                >
-                                  {secret ? (
-                                    <EyeOff size={16} />
-                                  ) : (
-                                    <Eye size={16} />
-                                  )}{" "}
-                                  {secret ? "Hide context" : "Show my context"}
-                                </button>
-                                {secret && (
-                                  <p className="secret-text">{round.context}</p>
-                                )}
-                                <p>
-                                  Follow your context without naming it
-                                  directly. Make the answer fit. Make it fun.
-                                </p>
-                              </>
-                            ) : (
-                              <p>
-                                Keep this screen visible. Team contexts stay on
-                                their own devices.
-                              </p>
-                            )}
-                          </section>
-                          <section className="answer-editor">
-                            <div className="section-title">
-                              <h3>Your team’s answer</h3>
-                              <span className="badge">
-                                {round.submitted}/{activeTeams.length} submitted
-                              </span>
-                            </div>
-                            {myTeam ? (
-                              <>
-                                <label className="sr-only" htmlFor="answer">
-                                  Your answer
-                                </label>
-                                <textarea
-                                  id="answer"
-                                  placeholder="One or two sentences. An entirely convincing story…"
-                                  maxLength={320}
-                                  value={
-                                    captain ? draft : round.my_answer || ""
-                                  }
-                                  disabled={!captain || remaining === 0}
-                                  onChange={(e) => {
-                                    setDraft(e.target.value);
-                                    localStorage.setItem(
-                                      "draft-" + round.id,
-                                      e.target.value,
-                                    );
-                                  }}
-                                />
-                                <div className="editor-meta">
-                                  <span>
-                                    {captain
-                                      ? draft.length
-                                      : (round.my_answer || "").length}
-                                    /320 · maximum two sentences
-                                  </span>
-                                  {round.my_answer && (
-                                    <span>
-                                      <Check size={14} /> Answer saved
-                                    </span>
-                                  )}
-                                </div>
-                                {captain ? (
-                                  <button
-                                    className="primary"
-                                    disabled={
-                                      busy || !draft.trim() || remaining === 0
-                                    }
-                                    onClick={() =>
-                                      act("answer", { body: draft })
-                                    }
-                                  >
-                                    {round.my_answer
-                                      ? "Update answer"
-                                      : "Submit answer"}
-                                    <ArrowRight size={17} />
-                                  </button>
-                                ) : (
-                                  <p>
-                                    Your captain submits for the team. Talk
-                                    through your answer together.
-                                  </p>
-                                )}
-                                <p className="small">
-                                  {remaining
-                                    ? "You can revise your submission until the timer ends."
-                                    : "Time is up. Waiting for the host to open voting."}
-                                </p>
-                              </>
-                            ) : (
-                              <p className="spectator-note">
-                                The teams are writing. Answers will appear here
-                                when you open voting.
-                              </p>
-                            )}
-                          </section>
-                        </div>
-                        {host && (
-                          <div className="host-panel">
-                            <p>
-                              {remaining
-                                ? "Let the ideas cook. Voting opens after the timer."
-                                : "Writing is closed. Missing answers will be marked as not submitted."}
-                            </p>
-                            <button
-                              className="primary"
-                              disabled={busy || remaining > 0}
-                              onClick={() => act("voting")}
-                            >
-                              Open voting <ArrowRight size={17} />
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {(phase === "voting" || phase === "reveal") && (
-                      <>
-                        <div className="section-title">
-                          <div>
-                            <h2>
-                              {phase === "voting"
-                                ? "A lineup of very convincing answers."
-                                : "Meet the minds behind the answers."}
-                            </h2>
-                            <p>
-                              {phase === "voting"
-                                ? "One team vote for the imposter. One for the funniest. No voting for yourselves."
-                                : "The same prompt. Two different realities."}
-                            </p>
-                          </div>
-                          <span className="badge">
-                            {round.votes_cast}/{activeTeams.length} detective
-                            votes · {round.funny_votes_cast}/
-                            {activeTeams.length} funny votes
-                          </span>
-                        </div>
-                        <div className="answers-grid">
-                          {round.answers.map((a, i) => (
-                            <article
-                              className={
-                                "answer-card " +
-                                (a.is_imposter ? "imposter-card" : "")
-                              }
-                              key={a.id}
-                            >
-                              <div className="answer-header">
-                                <span className="answer-letter">
-                                  {String.fromCharCode(65 + i)}
-                                </span>
-                                <span>
-                                  {phase === "reveal"
-                                    ? state.teams.find(
-                                        (t) => t.id === a.team_id,
-                                      )?.name
-                                    : a.is_mine
-                                      ? "Your team"
-                                      : "Anonymous answer"}
-                                </span>
-                                {a.is_imposter && (
-                                  <span className="badge crimson">
-                                    IMPOSTER
-                                  </span>
-                                )}
-                              </div>
-                              <p className="answer-body">
-                                {a.body || "No answer submitted."}
-                              </p>
-                              {phase === "voting" ? (
-                                <div className="vote-buttons">
-                                  <button
-                                    className={
-                                      round.my_votes.imposter === a.id
-                                        ? "vote chosen"
-                                        : "vote"
-                                    }
-                                    disabled={
-                                      busy || !captain || a.is_mine || !a.body
-                                    }
-                                    onClick={() =>
-                                      act("vote", {
-                                        answer_id: a.id,
-                                        kind: "imposter",
-                                      })
-                                    }
-                                  >
-                                    <Fingerprint size={17} />
-                                    {round.my_votes.imposter === a.id
-                                      ? "Suspect selected"
-                                      : "The imposter"}
-                                  </button>
-                                  <button
-                                    className={
-                                      round.my_votes.funniest === a.id
-                                        ? "vote chosen"
-                                        : "vote"
-                                    }
-                                    disabled={
-                                      busy || !captain || a.is_mine || !a.body
-                                    }
-                                    onClick={() =>
-                                      act("vote", {
-                                        answer_id: a.id,
-                                        kind: "funniest",
-                                      })
-                                    }
-                                  >
-                                    <Smile size={17} />
-                                    {round.my_votes.funniest === a.id
-                                      ? "Funny vote saved"
-                                      : "Funniest"}
-                                  </button>
-                                </div>
-                              ) : (
-                                <div className="answer-results">
-                                  <span>
-                                    <Fingerprint size={16} />
-                                    {a.votes} suspect votes
-                                  </span>
-                                  <span>
-                                    <Smile size={16} />
-                                    {a.funny_votes} funny votes
-                                  </span>
-                                </div>
-                              )}
-                            </article>
-                          ))}
-                        </div>
-                        {phase === "reveal" && (
-                          <div className="context-reveal">
-                            <div>
-                              <span className="eyebrow">
-                                THE NORMAL CONTEXT
-                              </span>
-                              <h3>{round.normal_context}</h3>
-                            </div>
-                            <div>
-                              <span className="eyebrow">
-                                THE IMPOSTER CONTEXT
-                              </span>
-                              <h3>{round.imposter_context}</h3>
-                            </div>
-                          </div>
-                        )}
-                        {host && (
-                          <div className="host-panel">
-                            <p>
-                              {phase === "voting"
-                                ? "Wait for both votes from every team, or reveal with the votes already cast."
-                                : "Scores are in. Give the teams a moment to enjoy the reveal."}
-                            </p>
-                            <button
-                              className="primary"
-                              disabled={busy}
-                              onClick={() =>
-                                act(
-                                  phase === "voting" ? "reveal" : "scoreboard",
-                                )
-                              }
-                            >
-                              {phase === "voting"
-                                ? "Reveal the imposter"
-                                : "See the scoreboard"}
-                              <ArrowRight size={17} />
-                            </button>
-                          </div>
-                        )}
-                      </>
-                    )}
-                    {phase === "scoreboard" && (
-                      <>
-                        <div className="scoreboard">
-                          <Trophy size={36} />
-                          <span className="eyebrow">
-                            THE STANDINGS · ROUND {state.game.round_number} OF
-                            10
-                          </span>
-                          <h2>
-                            {gameComplete
-                              ? winners.length === 1
-                                ? `${winners[0].name} wins!`
-                                : `${winners.map((t) => t.name).join(" & ")} tie!`
-                              : "Award-winning suspicion."}
-                          </h2>
-                          {[...activeTeams]
-                            .sort(
-                              (a, b) =>
-                                b.score - a.score ||
-                                a.name.localeCompare(b.name),
-                            )
-                            .map((t, i, arr) => (
-                              <div className="score-row" key={t.id}>
-                                <span>
-                                  {arr.findIndex((x) => x.score === t.score) +
-                                    1}
-                                </span>
-                                <strong>{t.name}</strong>
-                                <b>
-                                  {t.score}
-                                  <small>pts</small>
-                                </b>
-                                {t.score === topScore && <Trophy size={20} />}
-                              </div>
-                            ))}
-                        </div>
-                        <div className="reflection">
-                          <h3>Same prompt. Different context.</h3>
-                          <p>
-                            Which hidden context changed the answer most? Could
-                            confidence tell you who had different information?
-                          </p>
-                        </div>
-                        {gameComplete && (
-                          <div className="host-panel">
-                            <div>
-                              <h3>Game complete.</h3>
-                              <p>
-                                Ten rounds down. The highest score takes the
-                                win.
-                              </p>
-                            </div>
-                          </div>
-                        )}
-                        {host && !gameComplete && (
-                          <div className="host-panel">
-                            <div>
-                              <h3>
-                                Ready for round {state.game.round_number + 1}?
-                              </h3>
-                              <p>
-                                The next prompt and imposter will be selected
-                                automatically.
-                              </p>
-                            </div>
-                            {startControls}
-                          </div>
-                        )}
-                      </>
-                    )}
-                  </>
-                )}
-              </>
-            )}
-            <div className="room-footer">
-              <button className="text-button" onClick={leave}>
-                Back to home
-              </button>
-              <span className="small">
-                Room lasts 24 hours · Rejoin on this device to keep your seat
-              </span>
-              {host && (
-                <button className="text-button" onClick={() => setReset(true)}>
-                  <RotateCcw size={14} /> Reset game
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-      </main>
 
-      {rules && (
-        <div className="modal-backdrop" onClick={() => setRules(false)}>
+  const timer = (cls: string) => (
+    <div
+      role="img"
+      aria-label={remaining ? `${remaining} seconds left` : "Time is up"}
+      className={
+        "timer " +
+        cls +
+        (remaining > 0 && remaining <= 10 ? " urgent" : "") +
+        (remaining === 0 ? " done" : "")
+      }
+    >
+      <strong>{remaining}</strong>
+      <small>{remaining ? "seconds" : "pens down"}</small>
+    </div>
+  );
+
+  function answerTile(a: Answer, i: number) {
+    const reveal = phase === "reveal",
+      chosen = round?.my_votes.imposter === a.id,
+      tone = reveal && a.team_id ? toneOf(a.team_id) : i % TONES,
+      canVote = phase === "voting" && captain && !a.is_mine && Boolean(a.body),
+      cls =
+        "tile answer tone-" +
+        tone +
+        (chosen ? " chosen" : "") +
+        (a.is_mine ? " own" : "") +
+        (reveal ? (a.is_imposter ? " culprit" : " innocent") : "");
+    const inner = (
+      <>
+        <span className="answer-top">
+          <span className="letter">{String.fromCharCode(65 + i)}</span>
+          {reveal ? (
+            <span className="tag">{teamName(a.team_id)}</span>
+          ) : (
+            a.is_mine && <span className="tag">Your team</span>
+          )}
+          {reveal && a.is_imposter && (
+            <span className="tag tag-ink">
+              <Fingerprint size={14} /> Imposter
+            </span>
+          )}
+          {chosen && (
+            <span className="tag tag-ink">
+              <Check size={14} /> Your vote
+            </span>
+          )}
+        </span>
+        <span className="answer-body">{a.body || "No answer submitted."}</span>
+        {reveal && (
+          <span className="answer-votes">
+            <Fingerprint size={18} /> {a.votes ?? 0}{" "}
+            {a.votes === 1 ? "vote" : "votes"}
+          </span>
+        )}
+      </>
+    );
+    return canVote ? (
+      <button
+        key={a.id}
+        className={cls}
+        aria-pressed={chosen}
+        onClick={() => act("vote", { answer_id: a.id, kind: "imposter" })}
+      >
+        {inner}
+      </button>
+    ) : (
+      <article key={a.id} className={cls}>
+        {inner}
+      </article>
+    );
+  }
+
+  function verdict() {
+    if (!round || !myTeam) return null;
+    const culprit = round.answers.find((a) => a.is_imposter),
+      voted = round.my_votes.imposter;
+    if (culprit?.is_mine)
+      return { kind: "was", text: "That was you. You were the imposter." };
+    if (voted && voted === culprit?.id)
+      return { kind: "win", text: "Your team spotted it. +1" };
+    if (voted) return { kind: "miss", text: "Your team guessed wrong." };
+    return { kind: "miss", text: "Your team didn’t vote." };
+  }
+
+  let info: ReactNode = null,
+    actions: ReactNode = null;
+  const testButton = (label: string, action: string) => (
+    <button
+      className="btn btn-ghost"
+      disabled={busy}
+      onClick={() => act(action)}
+    >
+      <FlaskConical size={16} /> {label}
+    </button>
+  );
+  if (host && state) {
+    if (phase === "lobby") {
+      info =
+        activeTeams.length < 3
+          ? `${activeTeams.length} of 3 teams ready`
+          : `${activeTeams.length} teams ready`;
+      actions = (
+        <>
+          {!state.game.test_mode &&
+            activeTeams.length === 0 &&
+            testButton("Test teams", "test_setup")}
+          {state.game.test_mode && (
+            <span className="chip chip-test">
+              <FlaskConical size={14} /> Test mode
+            </span>
+          )}
+          <div
+            className="segmented seg-light"
+            role="radiogroup"
+            aria-label="Time per round"
+          >
+            {[60, 75, 90].map((s) => (
+              <button
+                key={s}
+                role="radio"
+                aria-checked={seconds === s}
+                className={seconds === s ? "on" : ""}
+                onClick={() => setSeconds(s)}
+              >
+                {s}s
+              </button>
+            ))}
+          </div>
+          <button
+            disabled={busy || activeTeams.length < 3}
+            className="btn btn-light btn-lg"
+            onClick={() => act("start", { seconds })}
+          >
+            Start game <ArrowRight size={20} />
+          </button>
+        </>
+      );
+    } else if (round && phase === "writing") {
+      info = allSubmitted
+        ? "Every team is in"
+        : remaining
+          ? `${round.submitted} of ${activeTeams.length} teams submitted`
+          : "Time’s up. Missing answers stay blank.";
+      actions = (
+        <>
+          {state.game.test_mode &&
+            !allSubmitted &&
+            testButton("Fill test answers", "test_answers")}
+          <button
+            className="btn btn-light btn-lg"
+            disabled={busy || (remaining > 0 && !allSubmitted)}
+            onClick={() => act("voting")}
+          >
+            Open voting <ArrowRight size={20} />
+          </button>
+        </>
+      );
+    } else if (round && phase === "voting") {
+      info = `${round.votes_cast} of ${activeTeams.length} teams voted`;
+      actions = (
+        <>
+          {state.game.test_mode && testButton("Cast test votes", "test_votes")}
+          <button
+            className="btn btn-light btn-lg"
+            disabled={busy}
+            onClick={() => act("reveal")}
+          >
+            Reveal the imposter <ArrowRight size={20} />
+          </button>
+        </>
+      );
+    } else if (round && phase === "reveal") {
+      info = "Scores are in";
+      actions = (
+        <button
+          className="btn btn-light btn-lg"
+          disabled={busy}
+          onClick={() => act("scoreboard")}
+        >
+          Scoreboard <ArrowRight size={20} />
+        </button>
+      );
+    } else if (round && phase === "scoreboard") {
+      info = gameComplete
+        ? "Game complete · 10 rounds played"
+        : `Round ${state.game.round_number} done`;
+      actions = gameComplete ? (
+        <button
+          className="btn btn-light btn-lg"
+          onClick={() => setPanel("reset")}
+        >
+          <RotateCcw size={18} /> Play again
+        </button>
+      ) : (
+        <button
+          className="btn btn-light btn-lg"
+          disabled={busy}
+          onClick={() => act("start")}
+        >
+          Start round {state.game.round_number + 1} <ArrowRight size={20} />
+        </button>
+      );
+    }
+  }
+
+  const v = phase === "reveal" ? verdict() : null,
+    culprit = round?.answers.find((a) => a.is_imposter),
+    culpritName =
+      teamName(culprit?.team_id) || teamName(round?.imposter_team) || "A team";
+
+  return (
+    <div
+      className={
+        "app " +
+        (!state ? "is-landing" : host ? "is-host" : "is-player") +
+        (phase ? " phase-" + phase : "")
+      }
+    >
+      {state && (
+        <header className="topbar">
+          <div className="topbar-in">
+            <span className="brand">
+              <span className="brand-mark">
+                <Fingerprint size={20} />
+              </span>
+              <span className="brand-word">
+                imposter<i>/llm</i>
+              </span>
+            </span>
+            {myTeam?.name_locked && (
+              <span className={"chip team-chip tone-" + toneOf(myTeam.id)}>
+                {myTeam.name}
+              </span>
+            )}
+            {phase !== "lobby" && (
+              <div
+                className="pips"
+                role="img"
+                aria-label={`Round ${state.game.round_number} of 10`}
+              >
+                {Array.from({ length: 10 }, (_, i) => (
+                  <i
+                    key={i}
+                    className={i < state.game.round_number ? "on" : ""}
+                  />
+                ))}
+              </div>
+            )}
+            <span className="spacer" />
+            {host && (
+              <button
+                className="code-chip"
+                onClick={copy}
+                aria-label={`Room code ${state.game.code}. Copy invite link`}
+              >
+                {state.game.code}
+                {copied ? <Check size={16} /> : <Copy size={16} />}
+              </button>
+            )}
+            <span className={"live" + (connected ? "" : " off")} role="status">
+              <i />
+              <span>{connected ? "Live" : "Reconnecting…"}</span>
+            </span>
+            {phase === "writing" && round && timer("timer-bar")}
+            <button
+              className="icon-btn"
+              aria-label="How to play"
+              onClick={() => setPanel("rules")}
+            >
+              <HelpCircle size={22} />
+            </button>
+            <button
+              className="icon-btn"
+              aria-label="Menu"
+              onClick={() => setPanel("menu")}
+            >
+              <Menu size={22} />
+            </button>
+          </div>
+        </header>
+      )}
+      {error && (
+        <div role="alert" className="toast">
+          <span>{error}</span>
+          <button aria-label="Dismiss error" onClick={() => setError("")}>
+            <X size={18} />
+          </button>
+        </div>
+      )}
+      {!state ? (
+        <main className="landing">
+          <div className="logo">
+            <span className="brand-mark brand-mark-lg">
+              <Fingerprint size={38} />
+            </span>
+            <h1 className="logo-word">
+              imposter<i>/llm</i>
+            </h1>
+            <p className="tagline">
+              Same prompt. Secret context. Spot the imposter.
+            </p>
+          </div>
+          <form
+            className="entry-card"
+            aria-label={mode === "join" ? "Join a game" : "Host a game"}
+            onSubmit={(e) => {
+              e.preventDefault();
+              act(mode === "join" ? "join" : "create", {
+                nickname: nick,
+                code,
+                teams,
+              });
+            }}
+          >
+            {mode === "join" && (
+              <label>
+                <span className="sr-only">Room code</span>
+                <input
+                  className="field code-input"
+                  autoComplete="off"
+                  autoCapitalize="characters"
+                  spellCheck={false}
+                  inputMode="text"
+                  placeholder="Room code"
+                  value={code}
+                  minLength={6}
+                  maxLength={6}
+                  pattern="[A-Za-z0-9]{6}"
+                  required
+                  onChange={(e) => setCode(e.target.value.toUpperCase())}
+                />
+              </label>
+            )}
+            <label>
+              <span className="sr-only">Your name</span>
+              <input
+                className="field"
+                autoComplete="nickname"
+                autoCapitalize="words"
+                placeholder="Your name"
+                value={nick}
+                maxLength={24}
+                required
+                onChange={(e) => setNick(e.target.value)}
+              />
+            </label>
+            {mode === "create" && (
+              <fieldset className="teams-field">
+                <legend>How many teams?</legend>
+                <div className="segmented seg-dark" role="radiogroup">
+                  {[3, 4, 5].map((n) => (
+                    <button
+                      key={n}
+                      type="button"
+                      role="radio"
+                      aria-checked={teams === n}
+                      className={teams === n ? "on" : ""}
+                      onClick={() => setTeams(n)}
+                    >
+                      {n}
+                    </button>
+                  ))}
+                </div>
+                <p>
+                  {teams === 3
+                    ? "Small group"
+                    : teams === 4
+                      ? "Club favorite"
+                      : "Full house"}
+                </p>
+              </fieldset>
+            )}
+            <button className="btn btn-dark btn-xl btn-block" disabled={busy}>
+              {busy
+                ? "Connecting…"
+                : mode === "join"
+                  ? "Join game"
+                  : "Create room"}
+            </button>
+          </form>
+          <div className="landing-links">
+            <button
+              className="link"
+              onClick={() => setMode(mode === "join" ? "create" : "join")}
+            >
+              {mode === "join" ? "Host a game" : "Join a game instead"}
+            </button>
+            <button className="link" onClick={() => setPanel("rules")}>
+              How to play
+            </button>
+          </div>
+          <p className="club">Gen AI at Indiana University</p>
+        </main>
+      ) : (
+        <main className="screen" key={phase}>
+          {phase === "lobby" && (
+            <>
+              {host ? (
+                <section className="join-card" aria-label="Room code">
+                  <p>
+                    Join at <b>{location.host}</b> with the code
+                  </p>
+                  <button
+                    className="join-code"
+                    onClick={copy}
+                    aria-label={`Room code ${state.game.code}. Copy invite link`}
+                  >
+                    {state.game.code}
+                  </button>
+                  <small>
+                    {copied
+                      ? "Invite link copied"
+                      : "Tap the code to copy the invite link"}
+                  </small>
+                </section>
+              ) : (
+                <section className="lobby-head">
+                  <h1>
+                    {myTeam
+                      ? `You’re in, ${state.me.nickname}!`
+                      : "Pick your team"}
+                  </h1>
+                  <p>
+                    {myTeam
+                      ? "Waiting for the host to start the game."
+                      : "The first player on a team names it and becomes captain."}
+                  </p>
+                </section>
+              )}
+              <p className="count-pill">
+                {playerCount} {playerCount === 1 ? "player" : "players"} ·{" "}
+                {activeTeams.length}{" "}
+                {activeTeams.length === 1 ? "team" : "teams"}
+              </p>
+              <div className={"team-grid n-" + orderedTeams.length}>
+                {orderedTeams.map((t, i) => {
+                  const members = state.players.filter(
+                      (p) => p.team_id === t.id,
+                    ),
+                    mine = myTeam?.id === t.id,
+                    canName =
+                      !t.name_locked &&
+                      (members.length === 0 || (mine && captain)),
+                    chosenName = teamNames[t.id] || "";
+                  return (
+                    <article
+                      className={
+                        "tile team tone-" + (i % TONES) + (mine ? " mine" : "")
+                      }
+                      key={t.id}
+                    >
+                      <h2>{t.name_locked ? t.name : `Team ${t.position}`}</h2>
+                      {canName && (
+                        <label>
+                          <span className="sr-only">Team name</span>
+                          <input
+                            className="field field-sm"
+                            autoCapitalize="words"
+                            maxLength={24}
+                            placeholder="Name your team"
+                            value={chosenName}
+                            onChange={(e) =>
+                              setTeamNames((names) => ({
+                                ...names,
+                                [t.id]: e.target.value,
+                              }))
+                            }
+                          />
+                        </label>
+                      )}
+                      {!t.name_locked && members.length > 0 && !canName && (
+                        <p className="tile-note">
+                          The captain is choosing a name…
+                        </p>
+                      )}
+                      <div className="members">
+                        {members.map((p) => (
+                          <span className="pill" key={p.id}>
+                            <i
+                              className={online.includes(p.id) ? "here" : ""}
+                            />
+                            {p.nickname}
+                            {p.id === t.captain_id && (
+                              <>
+                                <Crown size={14} aria-hidden="true" />
+                                <span className="sr-only">captain</span>
+                              </>
+                            )}
+                          </span>
+                        ))}
+                        {!members.length && !canName && (
+                          <span className="tile-note">Open seat</span>
+                        )}
+                      </div>
+                      <button
+                        disabled={
+                          busy ||
+                          (mine && t.name_locked) ||
+                          (!mine && members.length >= 4) ||
+                          (!t.name_locked && (!canName || !chosenName.trim()))
+                        }
+                        className={
+                          "btn btn-block tile-action " +
+                          (host && !mine ? "btn-ghost" : "btn-light") +
+                          (mine && t.name_locked ? " is-mine" : "")
+                        }
+                        onClick={() =>
+                          act("team", {
+                            team_id: t.id,
+                            ...(!t.name_locked
+                              ? { team_name: chosenName }
+                              : {}),
+                          })
+                        }
+                      >
+                        {mine && t.name_locked ? (
+                          <>
+                            <Check size={18} /> Your team
+                          </>
+                        ) : mine ? (
+                          "Save team name"
+                        ) : !mine && members.length >= 4 ? (
+                          "Team full"
+                        ) : !t.name_locked ? (
+                          "Name and join"
+                        ) : (
+                          "Join team"
+                        )}
+                      </button>
+                    </article>
+                  );
+                })}
+              </div>
+              {!!joinable?.length && (
+                <p className="lobby-note">
+                  Choosing a team: {joinable.map((p) => p.nickname).join(", ")}
+                </p>
+              )}
+              {host && myTeam && (
+                <button
+                  className="link"
+                  disabled={busy}
+                  onClick={() => act("team", { team_id: null })}
+                >
+                  Host without a team
+                </button>
+              )}
+            </>
+          )}
+          {phase !== "lobby" && !round && (
+            <p className="lobby-note">Loading the round…</p>
+          )}
+          {round && phase === "writing" && (
+            <>
+              <section className="prompt-row">
+                <h1 className="prompt">{round.prompt}</h1>
+                {timer("timer-stage")}
+              </section>
+              {myTeam ? (
+                <>
+                  <div className="write-grid">
+                    <button
+                      className={"secret" + (secret ? " open" : "")}
+                      aria-expanded={secret}
+                      onClick={() => setSecret(!secret)}
+                    >
+                      <span className="secret-label">
+                        <LockKeyhole size={18} /> Only your team sees this
+                      </span>
+                      {secret ? (
+                        <>
+                          <strong className="secret-text">
+                            {round.context}
+                          </strong>
+                          <span className="secret-hint">
+                            Use this context without naming it directly.
+                          </span>
+                        </>
+                      ) : (
+                        <span className="secret-cover">
+                          <Eye size={24} /> Tap to reveal your context
+                        </span>
+                      )}
+                    </button>
+                    <div className="editor">
+                      <label className="sr-only" htmlFor="answer">
+                        Your answer
+                      </label>
+                      <textarea
+                        id="answer"
+                        placeholder={
+                          captain
+                            ? "One or two sentences. An entirely convincing story…"
+                            : "Your captain types the team’s answer."
+                        }
+                        maxLength={320}
+                        value={captain ? draft : round.my_answer || ""}
+                        disabled={!captain || remaining === 0}
+                        onChange={(e) => {
+                          setDraft(e.target.value);
+                          localStorage.setItem(
+                            "draft-" + round.id,
+                            e.target.value,
+                          );
+                        }}
+                      />
+                      <div className="editor-meta">
+                        <span>
+                          {captain
+                            ? draft.length
+                            : (round.my_answer || "").length}
+                          /320 · max two sentences
+                        </span>
+                        {round.my_answer && (
+                          <span className="saved">
+                            <Check size={14} /> Saved
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                  <div className="dock">
+                    {captain ? (
+                      <button
+                        className="btn btn-light btn-xl btn-block"
+                        disabled={busy || !draft.trim() || remaining === 0}
+                        onClick={() => act("answer", { body: draft })}
+                      >
+                        {round.my_answer ? "Update answer" : "Submit answer"}
+                        <ArrowRight size={22} />
+                      </button>
+                    ) : (
+                      <p className="dock-note">
+                        Your captain submits for the team. Talk it through
+                        together.
+                      </p>
+                    )}
+                    <p className="dock-note">
+                      {remaining
+                        ? "You can revise until the timer ends."
+                        : "Time is up. Waiting for the host to open voting."}
+                    </p>
+                  </div>
+                </>
+              ) : host ? (
+                <section className="tracker" aria-label="Submissions">
+                  <div className="dots">
+                    {activeTeams.map((t, i) => (
+                      <i
+                        key={t.id}
+                        className={i < round.submitted ? "on" : ""}
+                      />
+                    ))}
+                  </div>
+                  <p>
+                    {allSubmitted
+                      ? "Every team is in!"
+                      : `${round.submitted} of ${activeTeams.length} teams have answered`}
+                  </p>
+                </section>
+              ) : (
+                <p className="lobby-note">
+                  The teams are writing. Answers appear when voting opens.
+                </p>
+              )}
+            </>
+          )}
+          {round && phase === "voting" && (
+            <>
+              <section className="vote-head">
+                <h1>Spot the imposter</h1>
+                <p className="recap">{round.prompt}</p>
+                <p className="vote-hint">
+                  {captain
+                    ? "Tap the answer written from a different context."
+                    : myTeam
+                      ? "Your captain votes for the team."
+                      : "Teams are voting."}
+                </p>
+              </section>
+              <div className={"answers n-" + round.answers.length}>
+                {round.answers.map(answerTile)}
+              </div>
+            </>
+          )}
+          {round && phase === "reveal" && (
+            <>
+              <section className="vote-head">
+                <h1>The imposter was {culpritName}</h1>
+                {v && <p className={"verdict verdict-" + v.kind}>{v.text}</p>}
+              </section>
+              <div className="contexts">
+                <div className="ctx">
+                  <span>Everyone else got</span>
+                  <strong>{round.normal_context}</strong>
+                </div>
+                <div className="ctx ctx-imposter">
+                  <span>
+                    <Fingerprint size={16} /> The imposter got
+                  </span>
+                  <strong>{round.imposter_context}</strong>
+                </div>
+              </div>
+              <div className={"answers n-" + round.answers.length}>
+                {round.answers.map(answerTile)}
+              </div>
+            </>
+          )}
+          {round && phase === "scoreboard" && (
+            <section className="board">
+              {gameComplete && <Trophy className="board-trophy" size={56} />}
+              <h1>
+                {gameComplete
+                  ? winners.length === 1
+                    ? `${winners[0].name} wins!`
+                    : `${winners.map((t) => t.name).join(" & ")} tie!`
+                  : "Scoreboard"}
+              </h1>
+              {gameComplete && (
+                <div className="podium">
+                  {[ranked[1], ranked[0], ranked[2]]
+                    .filter(Boolean)
+                    .map((t) => (
+                      <div
+                        key={t.id}
+                        className={
+                          "step tone-" +
+                          toneOf(t.id) +
+                          " rank-" +
+                          Math.min(rankOf(t), 3)
+                        }
+                      >
+                        <span className="step-name">{t.name}</span>
+                        <b className="step-score">{t.score}</b>
+                        <span className="step-block">{rankOf(t)}</span>
+                      </div>
+                    ))}
+                </div>
+              )}
+              <ol className="ranks">
+                {(gameComplete ? ranked.slice(3) : ranked).map((t) => (
+                  <li
+                    key={t.id}
+                    className={
+                      "rank tone-" +
+                      toneOf(t.id) +
+                      (t.score === topScore && topScore > 0 ? " lead" : "")
+                    }
+                    style={
+                      {
+                        "--fill": topScore
+                          ? (t.score / topScore) * 100 + "%"
+                          : "0%",
+                      } as CSSProperties
+                    }
+                  >
+                    <span className="rank-n">{rankOf(t)}</span>
+                    <strong className="rank-name">{t.name}</strong>
+                    {t.score === topScore && topScore > 0 && (
+                      <Trophy size={20} aria-label="Leading" />
+                    )}
+                    <b className="rank-score">{t.score}</b>
+                  </li>
+                ))}
+              </ol>
+              {!host && !gameComplete && (
+                <p className="lobby-note">
+                  Waiting for the host to start round{" "}
+                  {state.game.round_number + 1}.
+                </p>
+              )}
+            </section>
+          )}
+        </main>
+      )}
+      {host && state && (
+        <footer className="hostbar">
+          <div className="hostbar-in">
+            <p className="hostbar-info" role="status">
+              {info}
+            </p>
+            <div className="hostbar-actions">{actions}</div>
+          </div>
+        </footer>
+      )}
+
+      {panel === "rules" && (
+        <div className="backdrop" onClick={() => setPanel(null)}>
           <section
-            className="modal"
+            className="sheet"
             role="dialog"
             aria-modal="true"
             aria-labelledby="rules-title"
             onClick={(e) => e.stopPropagation()}
           >
             <button
-              className="close"
+              className="sheet-close"
               aria-label="Close rules"
-              onClick={() => setRules(false)}
+              onClick={() => setPanel(null)}
               autoFocus
             >
-              <X />
+              <X size={22} />
             </button>
-            <span className="eyebrow">IMPOSTER LLM / FIELD GUIDE</span>
-            <h2 id="rules-title">Keep your context close.</h2>
-            <ol>
+            <h2 id="rules-title">How to play</h2>
+            <ol className="steps">
               <li>
                 Join a team. Its first player chooses the name and becomes
                 captain.
@@ -1082,15 +1132,15 @@ function App() {
                 can revise until time runs out.
               </li>
               <li>
-                Vote as a team for the imposter and the funniest answer. You can
-                change votes until the host reveals.
+                Vote as a team for the imposter. You can change your vote until
+                the host reveals.
               </li>
               <li>
                 Play 10 random prompts. The team with the highest final score
                 wins.
               </li>
             </ol>
-            <div className="rules-scores">
+            <div className="points">
               <p>
                 <b>+1</b> Correctly identify the imposter
               </p>
@@ -1100,45 +1150,90 @@ function App() {
               <p>
                 <b>+1</b> Imposter leaves one other team with the most votes
               </p>
-              <p>
-                <b>+1</b> Audience-voted funniest answer
-              </p>
             </div>
-            <p className="small">
-              A tie involving the imposter counts as detection. A tied funniest
-              vote awards one point to each winner. No deduction votes means no
-              escape points. An imposter must submit an answer to earn escape
+            <p className="fine">
+              A tie involving the imposter counts as detection. No votes means
+              no escape points. An imposter must submit an answer to earn escape
               points.
             </p>
-            <button className="primary wide" onClick={() => setRules(false)}>
-              I’m in <ArrowRight size={17} />
+            <button
+              className="btn btn-dark btn-lg btn-block"
+              onClick={() => setPanel(null)}
+            >
+              I’m in <ArrowRight size={20} />
             </button>
           </section>
         </div>
       )}
-      {reset && (
-        <div className="modal-backdrop">
+      {panel === "menu" && (
+        <div className="backdrop" onClick={() => setPanel(null)}>
           <section
-            className="modal"
+            className="sheet"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="menu-title"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button
+              className="sheet-close"
+              aria-label="Close menu"
+              onClick={() => setPanel(null)}
+            >
+              <X size={22} />
+            </button>
+            <h2 id="menu-title">Menu</h2>
+            <div className="menu-list">
+              <button className="menu-item" onClick={() => setPanel("rules")}>
+                <HelpCircle size={20} /> How to play
+              </button>
+              <button className="menu-item" onClick={copy}>
+                {copied ? <Check size={20} /> : <Copy size={20} />}
+                {copied ? "Invite link copied" : "Copy invite link"}
+              </button>
+              {host && (
+                <button className="menu-item" onClick={() => setPanel("reset")}>
+                  <RotateCcw size={20} /> Reset game
+                </button>
+              )}
+              <button
+                className="menu-item"
+                onClick={() => {
+                  setPanel(null);
+                  leave();
+                }}
+              >
+                <X size={20} /> Leave room
+              </button>
+            </div>
+            <p className="fine">
+              Room lasts 24 hours. Rejoin on this device to keep your seat.
+            </p>
+          </section>
+        </div>
+      )}
+      {panel === "reset" && (
+        <div className="backdrop">
+          <section
+            className="sheet"
             role="dialog"
             aria-modal="true"
             aria-labelledby="reset-title"
           >
             <h2 id="reset-title">Start fresh?</h2>
-            <p>
+            <p className="sheet-copy">
               This clears all rounds, answers, votes, and scores in this room.
-              Players and teams stay.
+              Players and teams stay. Test players are removed.
             </p>
-            <div className="vote-buttons">
+            <div className="sheet-actions">
               <button
-                className="outline"
+                className="btn btn-outline btn-lg"
                 autoFocus
-                onClick={() => setReset(false)}
+                onClick={() => setPanel(null)}
               >
                 Keep playing
               </button>
               <button
-                className="primary"
+                className="btn btn-dark btn-lg"
                 disabled={busy}
                 onClick={() => act("reset")}
               >
@@ -1148,7 +1243,7 @@ function App() {
           </section>
         </div>
       )}
-    </>
+    </div>
   );
 }
 createRoot(document.getElementById("root")!).render(<App />);

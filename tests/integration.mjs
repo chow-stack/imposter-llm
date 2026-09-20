@@ -150,7 +150,6 @@ for (let i = 0; i < 3; i++) {
 }
 await call(a, "answer", { game_id: gid, body: "Revised answer zero." });
 await denied(a, "team", { game_id: gid, team_id: s.teams[1].id });
-await denied(host, "voting", { game_id: gid });
 await denied(outsider, "join", { nickname: "Late", code: s.game.code });
 const {
   data: { session },
@@ -164,13 +163,15 @@ await reconnected.auth.setSession({
 });
 assert.equal((await snapshot(reconnected)).me.id, writing[0].me.id);
 console.log(
-  "PASS auth, room membership, host authority, private context, answer revision, team lock, reconnect. Waiting for server timer…",
+  "PASS auth, room membership, host authority, private context, answer revision, team lock, reconnect.",
 );
-await new Promise((r) =>
-  setTimeout(r, Math.max(0, Date.parse(s.round.ends_at) - Date.now() + 500)),
+s = await call(host, "voting", { game_id: gid });
+assert.equal(
+  s.game.phase,
+  "voting",
+  "host can quickstart after all submissions",
 );
 await denied(a, "answer", { game_id: gid, body: "Too late." });
-s = await call(host, "voting", { game_id: gid });
 assert.equal(s.round.answers.length, 3);
 for (const ans of s.round.answers) {
   assert.equal(ans.team_id, undefined);
@@ -195,32 +196,25 @@ for (let i = 0; i < 3; i++) {
     kind: "imposter",
     answer_id: i === imp ? other.id : impAnswer,
   });
-  await call(players[i], "vote", {
-    game_id: gid,
-    kind: "funniest",
-    answer_id: other.id,
-  });
 }
+await denied(a, "vote", {
+  game_id: gid,
+  kind: "funniest",
+  answer_id: votes[0].round.answers.find((x) => !x.is_mine).id,
+});
 await denied(a, "reveal", { game_id: gid });
 s = await call(host, "reveal", { game_id: gid });
 assert.equal(s.round.imposter_team, writing[imp].me.team_id);
 assert.ok(s.round.normal_context);
 assert.ok(s.round.imposter_context);
-const topFunny = Math.max(...s.round.answers.map((x) => x.funny_votes));
 for (let i = 0; i < 3; i++) {
   const answer = s.round.answers.find(
     (x) => x.team_id === writing[i].me.team_id,
   );
-  const expected =
-    (normal.includes(i) ? 1 : 0) + (answer.funny_votes === topFunny ? 1 : 0);
+  const expected = normal.includes(i) ? 1 : 0;
   assert.equal(s.teams.find((x) => x.id === answer.team_id).score, expected);
 }
 await denied(host, "reveal", { game_id: gid });
-await denied(a, "vote", {
-  game_id: gid,
-  kind: "funniest",
-  answer_id: impAnswer,
-});
 s = await call(host, "scoreboard", { game_id: gid });
 assert.equal(s.game.phase, "scoreboard");
 s = await call(host, "reset", { game_id: gid });
@@ -230,12 +224,34 @@ assert.ok(s.teams.every((x) => x.score === 0));
 assert.equal(s.round, undefined);
 assert.ok(changes > 0, "Realtime delivered room updates");
 await a.removeChannel(channel);
-for (const client of [...clients, reconnected]) await client.auth.signOut();
 console.log(
-  "PASS timer enforcement, anonymous answer ordering, self-vote prevention, scoring, duplicate reveal protection, reset, Realtime (" +
+  "PASS quickstart, anonymous answer ordering, self-vote prevention, simplified scoring, duplicate reveal protection, reset, Realtime (" +
     changes +
     " updates).",
 );
 
+let test = await call(outsider, "create", {
+  nickname: "Solo host",
+  teams: 3,
+});
+const testGid = test.game.id;
+test = await call(outsider, "test_setup", { game_id: testGid });
+assert.equal(test.game.test_mode, true);
+assert.equal(test.players.filter((player) => player.is_test).length, 3);
+test = await startGame(outsider, { game_id: testGid, seconds: 60 });
+test = await call(outsider, "test_answers", { game_id: testGid });
+assert.equal(test.round.submitted, 3);
+test = await call(outsider, "voting", { game_id: testGid });
+test = await call(outsider, "test_votes", { game_id: testGid });
+assert.equal(test.round.votes_cast, 3);
+test = await call(outsider, "reveal", { game_id: testGid });
+test = await call(outsider, "scoreboard", { game_id: testGid });
+assert.equal(test.game.phase, "scoreboard");
+test = await call(outsider, "reset", { game_id: testGid });
+assert.equal(test.game.test_mode, false);
+assert.equal(test.players.filter((player) => player.is_test).length, 0);
+console.log("PASS host-only solo test mode through a complete round.");
+
+for (const client of [...clients, reconnected]) await client.auth.signOut();
 for (const client of [...clients, reconnected]) client.realtime.disconnect();
 process.exit(0);

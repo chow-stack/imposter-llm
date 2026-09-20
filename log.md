@@ -1,5 +1,22 @@
 # Change log
 
+# 2026-09-20 — Kahoot-style redesign
+
+- Replaced the light dashboard look with a crimson party-game field, cream cards, and five vibrant team tones (the original peach, sage, lavender, butter, and sky hues at full saturation). Font changed from DM Sans to Rubik.
+- Split the experience by role: the host gets a projector "stage" (giant room code, oversized prompt and timer, answer tiles, podium) with a fixed bottom bar holding the one next action; players get a phone-first flow with tap-to-reveal context, a large answer box, and a pinned Submit button.
+- Removed the phase stepper, eyebrow labels, and footer links. Round progress is ten pips in the top bar; How to play and a menu (copy link, reset, leave) are sheets.
+- Voting and reveal use colored answer tiles. Reveal names the imposter team, shows both contexts, dims the other answers, and tells each team whether it spotted the imposter.
+- No game logic, RPC, or database change. Verified with a scripted 10-round game (host at 1280×720 and 1440×900, five phone players).
+
+# 2026-09-20 — Simplified voting and solo test mode
+
+- Removed funniest voting, results, and scoring from the active game flow.
+- Let hosts open voting before the timer ends once every active team has submitted.
+- Added an empty-room test mode that creates three synthetic teams and lets the host fill answers and votes to play through a complete round alone.
+- Simplified labels and instructional copy, unified typography around DM Sans, strengthened hierarchy, and reduced mobile phase navigation to the current stage.
+- Updated integration, scoring, and preview helpers for the new flow.
+- Applied the migration to the linked Supabase project and verified a complete live multiplayer and solo-test round.
+
 # 2026-09-20 — Four additional rounds
 
 - Added Last thing you want to hear, Hidden inside, Everyone went silent, and One-star attraction.

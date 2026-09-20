@@ -21,15 +21,14 @@ begin
    insert into game_private.votes values(rid,t[2],'imposter',a[1]),(rid,t[3],'imposter',a[1]),(rid,t[1],'imposter',a[2]),(rid,t[4],'imposter',a[2]);
   elsif scenario=4 then -- No votes = no awards.
    null;
-  else -- No imposter answer = no escape; funniest tie gives 1 to both.
+  else -- No imposter answer = no escape.
    update game_private.answers set body='' where id=a[1];
-   insert into game_private.votes values(rid,t[1],'imposter',a[2]),(rid,t[3],'imposter',a[2]),(rid,t[1],'funniest',a[2]),(rid,t[2],'funniest',a[3]);
+   insert into game_private.votes values(rid,t[1],'imposter',a[2]),(rid,t[3],'imposter',a[2]);
   end if;
   s:=public.game_action('reveal',jsonb_build_object('game_id',g));
   select score into got from game_private.teams where id=t[1];
   if got<>(case scenario when 1 then 3 when 2 then 2 else 0 end) then raise exception 'Scenario %: imposter got %',scenario,got; end if;
   if scenario=3 and (select count(*) from game_private.teams where id=any(t[2:3]) and score=1)<>2 then raise exception 'Detection awards incorrect'; end if;
-  if scenario=5 and (select count(*) from game_private.teams where id=any(t[2:3]) and score=1)<>2 then raise exception 'Funniest tie incorrect'; end if;
  end loop;
 end $$;
 rollback;

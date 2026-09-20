@@ -54,8 +54,11 @@ const timer = setInterval(async () => {
       for (const c of clients) {
         const { data: p } = await c.rpc("game_state", { p_game_id: gid });
         const a = p.round.answers.find((a) => !a.is_mine);
-        for (const kind of ["imposter", "funniest"])
-          await call(c, "vote", { game_id: gid, kind, answer_id: a.id });
+        await call(c, "vote", {
+          game_id: gid,
+          kind: "imposter",
+          answer_id: a.id,
+        });
       }
       console.log("Preview votes submitted");
     }
