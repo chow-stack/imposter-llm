@@ -1,95 +1,153 @@
 # Imposter LLM
 
-A multiplayer, team-based social-deduction game for Gen AI at Indiana University. Players act as language models: everyone receives the same prompt, but one team gets different private context. No model API is used.
+**A multiplayer social-deduction party game where players pretend to be language models.**
 
-## Run
+Every team gets the same prompt, but one secret *imposter* team gets different private context. Teams write a short answer "as the model", then everyone reads the anonymous answers and votes on who was working from different context. Catch the imposter to score, or blend in as the imposter for a bigger payoff.
 
-```sh
+Built for the Gen AI Club at Indiana University, as a fun way to show how context shapes model output. It makes no model API calls. All game logic, timing, and scoring run inside Postgres.
+
+![React](https://img.shields.io/badge/React-19-61dafb) ![Vite](https://img.shields.io/badge/Vite-8-646cff) ![Supabase](https://img.shields.io/badge/Supabase-Auth%20%2B%20Postgres%20%2B%20Realtime-3ecf8e) ![License: MIT](https://img.shields.io/badge/license-MIT-blue)
+
+---
+
+## Contents
+
+- [How to play](#how-to-play)
+- [Scoring](#scoring)
+- [Architecture](#architecture)
+- [Getting started](#getting-started)
+- [Testing](#testing)
+- [Deployment](#deployment)
+- [Security and privacy](#security-and-privacy)
+- [Project structure](#project-structure)
+- [License](#license)
+
+## How to play
+
+1. **Host a room** with 3–5 teams. Four or five teams works best for a group of about 20.
+2. **Join.** Players open the room code or link, enter a nickname, and pick a team (up to four players each). The first player on a team names it and becomes captain. One device per team also works, and the host can stay a spectator on the projector.
+3. **Start.** The host picks a 60, 75, or 90-second writing timer. The database picks 10 different prompts at random from a bank of 31.
+4. **Write.** Each team privately sees its context and submits 1–2 sentences (up to 320 characters). Captains can revise until the deadline, and drafts survive a page refresh.
+5. **Vote.** When the timer ends, or once every team has submitted, all answers appear anonymously in a random order. Each captain casts one imposter vote (no self-votes) and can change it until the reveal.
+6. **Reveal.** The host reveals identities, both contexts, vote totals, and scores, then moves on. The imposter changes every round. After round 10, the highest score wins.
+
+## Scoring
+
+| Event | Points |
+|---|:---:|
+| A team correctly identifies the imposter | +1 to that team |
+| The imposter gets fewer votes than the most-voted answer | +2 to the imposter |
+
+Edge cases have explicit rules:
+
+- A top-vote tie that includes the imposter counts as a detection.
+- If nobody votes, there are no escape points, and an imposter that submits nothing can't earn them either.
+- Missing answers show as "No answer submitted" and can't receive votes.
+- Scoring runs once, in a locked database transaction. A reset clears rounds and scores but keeps players and teams.
+
+## Architecture
+
+- **Frontend:** React 19, TypeScript, and Vite, as a single-page app.
+- **Backend:** Supabase Anonymous Auth, Postgres with Row Level Security, RPC functions, Realtime database changes, and Presence.
+- **`public.games`** contains only room metadata and a revision counter, and RLS limits reads to room members.
+- **`game_private`** holds the round bank, teams, players, assignments, rounds, answers, and votes. Its tables have RLS enabled and no client grants.
+- **Public RPCs** (`game_action`, `game_start`, `game_team`, `game_state`) are `security invoker` wrappers around private functions. Those functions validate `auth.uid()`, membership, captain or host authority, phase, timer, team-name ownership, and vote targets. Every function pins its `search_path` and refuses unauthenticated callers.
+- **The database owns the game.** It handles prompt selection, imposter rotation, answer order, timers, the 10-round limit, and scoring. Every room mutation locks the room row to serialize writes.
+- **Sync.** Realtime broadcasts only public room metadata, and clients then fetch their own authorized snapshot. Five-second polling plus focus and network events handle recovery. Presence carries only user IDs and online status.
+
+## Getting started
+
+### Prerequisites
+
+- Node.js 20 or newer
+- A Supabase project with **Anonymous Sign-ins** enabled (Authentication → Sign In / Providers)
+
+### 1. Install
+
+```bash
+git clone https://github.com/chow-stack/imposter-llm.git
+cd imposter-llm
 npm ci
+```
+
+### 2. Set up the database
+
+Apply the migrations in `supabase/migrations/` in order:
+
+```bash
+supabase link --project-ref <your-project-ref>
+supabase db push
+```
+
+Keep the `game_private` schema **unexposed** in the Data API settings. The app uses only the `public` schema.
+
+### 3. Configure the environment
+
+```bash
 cp .env.example .env.local
-# Fill in the Supabase project URL and publishable key before starting.
+```
+
+| Variable | Description |
+|---|---|
+| `VITE_SUPABASE_URL` | `https://<your-project-ref>.supabase.co` |
+| `VITE_SUPABASE_PUBLISHABLE_KEY` | The project's **publishable** key (`sb_publishable_...`) |
+
+The build rejects anything other than a publishable key and any other `VITE_SUPABASE_*` variable, so a service-role key can't end up in the browser by mistake.
+
+### 4. Run
+
+```bash
 npm run dev
 ```
 
-Open http://localhost:5173. `.env.example` intentionally contains blank values. Keep the real project URL and publishable key in ignored `.env.local` or in Vercel's environment settings. Never put a service-role key, secret key, database password, or access token in any `VITE_` variable. Only `VITE_SUPABASE_*` variables are ever exposed to the browser; other `VITE_*` variables (such as ones Vercel injects) are ignored. The build rejects non-publishable keys and any `VITE_SUPABASE_*` variable other than those two.
+Open <http://localhost:5173>.
 
-## Before pushing to GitHub
+**Solo testing.** In an empty room, the host can create three test teams. Test mode fills in answers and votes, so one person can walk through every stage. A reset removes the synthetic players.
 
-Run `npm run check:secrets` and review `git diff --cached`. The scanner also runs before every production build. It checks source/config files for common credentials and rejects private/generated files if they are already tracked. It reports paths and credential types, never matched values. This is a pattern-based guard, not a guarantee against every possible secret.
+## Testing
 
-`.gitignore` excludes environment files (except the blank `.env.example`), private-key files, local configuration, Vercel metadata, Supabase temporary files, build output, dependencies, and logs. If a private file was committed previously, ignoring it does not remove it from history: remove it from Git and rotate any actual leaked secret. This folder had no Git repository/history when audited on 2026-09-20.
-
-The Supabase **publishable** key is necessarily visible in the deployed JavaScript and network requests. It is designed for this use; hiding it in an environment file does not make it a secret. Data access is protected by authentication, membership checks, and RLS. See [Supabase API-key documentation](https://supabase.com/docs/guides/getting-started/api-keys). No service-role or secret key is needed by this application.
-
-Vercel responses include a Content Security Policy limiting scripts to the app origin, connections to Supabase, and fonts to Google Fonts. Framing, object embeds, camera, microphone, and geolocation are disabled. These headers take effect on Vercel, not on the Vite development server.
-
-## Play
-
-1. Host a room with 3–5 teams; four or five is ideal for a 20-member club.
-2. Share the code or copied room link. Players enter nicknames and pick teams (up to four players each). The first person to join an empty team chooses its permanent name for that game.
-3. That first person is also the team captain, who submits answers and the team vote. One device per team also works. The host can remain a spectator for a shared screen.
-4. Select a 60, 75, or 90-second writing timer and start the game. The database randomly chooses 10 different prompts from the 31-round bank.
-5. Teams privately reveal their context and submit 1–2 sentences (320-character cap). Captains can revise until the server deadline. Drafts survive refresh on the same device.
-6. The host opens voting after the timer, or immediately after every team submits. All answers appear in a stable, randomized order without team identities.
-7. Each captain casts one imposter vote; no self-votes. Choices can change until reveal.
-8. The host reveals identities, both contexts, vote totals, and scores, then advances to the scoreboard and next random round.
-9. Each round randomly selects a different imposter from the previous round. After round 10, the team or tied teams with the highest score win.
-
-### Scoring decisions
-
-- +1 per team correctly identifying the imposter.
-- +2 to the imposter when it receives fewer votes than the most-voted answer.
-- A top-vote tie involving the imposter counts as detection.
-- No deduction votes means no escape points. An imposter that submits nothing cannot earn escape points.
-- Missing answers appear as “No answer submitted” and cannot receive votes.
-- Scoring happens once in a locked database transaction. Reset clears rounds and scores while keeping players and teams.
-
-The brief did not define ties, missing answers, or zero-vote outcomes; these explicit rules keep those cases predictable. Sentence count is a player instruction; the database enforces the 320-character cap, avoiding unreliable punctuation-based sentence counting.
-
-## Architecture and privacy
-
-- React + TypeScript + Vite; Supabase Anonymous Auth, Postgres, RLS, RPCs, Realtime database changes, and Presence.
-- `public.games` contains only room metadata and a revision counter. RLS restricts reads to members.
-- `game_private` contains the round bank, teams, players, assignments, rounds, answers, and votes. Tables have RLS and no client table grants.
-- Public `game_action`, `game_start`, `game_team`, and `game_state` functions are invoker wrappers around private, narrowly authorized functions. The private functions validate `auth.uid()`, membership, captain/host authority, phase, timer, team-name ownership, and vote targets. All functions pin their search paths and deny unauthenticated execution.
-- Secret contexts and imposter identity never appear in pre-reveal room snapshots. Each team receives only its assigned context; a spectator host receives none. The browser bundle contains no round-bank secret pairs.
-- Prompt selection, non-repeating consecutive imposter selection, answer order, timers, the 10-round limit, and scoring are database-owned. Room mutations lock the room row to serialize writes.
-- Realtime sends only public room metadata. Clients fetch their authorized snapshot after updates. Five-second polling and focus/network events provide recovery. Presence carries user IDs and online status, never context or answers.
-- Same-browser sessions and room IDs persist locally. Clearing browser data or changing devices loses the anonymous identity; reconnect on the original device whenever possible.
-- Rooms expire after 24 hours. Expiry blocks game actions and snapshots; physical retention is separate. Deleting a `public.games` row cascades through players, teams, rounds, assignments, answers, and votes. Anonymous Auth users still require separate administrative cleanup if desired.
-- The UI asks before resetting a room. A host may reveal before everyone votes.
-- An empty-room host can create three test teams. Test mode can fill answers and votes so one person can walk through every game stage; reset removes the synthetic players.
-
-## Supabase setup / migrations
-
-The migrations in `supabase/migrations/` are already applied to the requested project. Anonymous sign-ins are enabled. For a new project, apply migrations in order, enable Anonymous Auth, and replace the two public environment values. The game uses the `public` Data API schema; keep `game_private` unexposed. The initial migration adds `public.games` to the Realtime publication.
-
-The trigger-hardening migration revokes client execution of Supabase’s internal `rls_auto_enable` event-trigger function. Security Advisor’s anonymous-access notice is expected for this deliberately anonymous game; the policy still checks room membership. Private tables intentionally have RLS with no policies (default-deny).
-
-## Verify
-
-```sh
-npm run build
+```bash
+npm run build     # secret scan + type check + production build
 npm audit
-npm test
+npm test          # live integration suite (needs network and Anonymous Auth)
 ```
 
-`npm test` uses the configured live project, creates five anonymous test identities and a room, checks the random-start path, positive and negative authorization paths, reconnection, Realtime, hidden data, early voting after all submissions, voting, scoring, reset, and the host-only solo test flow. It needs network access and Anonymous Auth. Test room metadata remains until expiry/administrative cleanup. Run `tests/scoring.sql` as an administrator for five additional scoring fixtures; its transaction rolls back everything.
+`npm test` runs against the project in `.env.local`. It creates five anonymous identities and a room, then checks the start path, positive and negative authorization, reconnection, Realtime, hidden data, early voting, voting, scoring, reset, and the solo test flow.
 
-`tests/preview-players.mjs CODE` joins three API-driven test captains to a manually created preview room for visual QA, submits sample answers and votes, and exits at scoreboard. It is a developer helper, not a game feature.
+- `tests/scoring.sql` adds five scoring fixtures. Run it in the SQL editor as an administrator; its transaction rolls everything back.
+- `node tests/preview-players.mjs CODE` joins three scripted captains to a room for visual QA.
 
-## Deploy to Vercel
+## Deployment
 
-This repository is deployment-ready; it has not been published automatically.
+1. Import the repository into [Vercel](https://vercel.com/new) as a Vite project (build `npm run build`, output `dist`).
+2. Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY`, then redeploy whenever they change.
+3. Before an event, run a test room on the public URL and check that the Supabase project hasn't been paused for inactivity.
 
-- Import this folder/repository into Vercel as a Vite project.
-- Build command: `npm run build`; output: `dist`.
-- Set `VITE_SUPABASE_URL` and `VITE_SUPABASE_PUBLISHABLE_KEY` using the values from your local `.env.local` or Supabase dashboard.
-- Redeploy after changing build-time environment variables.
-- Run a test room on the public HTTPS URL before the club meeting. Check that Supabase has not paused for inactivity.
+`vercel.json` adds a strict Content Security Policy that limits scripts to the app's origin, connections to Supabase, and fonts to Google Fonts. It also disables framing, object embeds, the camera, the microphone, and geolocation.
 
-## Design and source
+## Security and privacy
 
-Game requirements: the live-read `Personal/wiki/gen-ai-club-meeting-2-ai-technicals.md` activity brief, 2026-09-20. The selectable bank contains 31 approved prompt/context pairs; each game uses 10 of them without repetition. Retired rounds remain only for historical round integrity.
+- **No secret keys anywhere in the app.** The publishable key is meant to be public, and every data access is enforced by authentication, membership checks, and RLS. See [Supabase's API key docs](https://supabase.com/docs/guides/getting-started/api-keys).
+- **The pre-build secret scan** (`npm run check:secrets`) rejects tracked private files and common credential formats. It reports file paths and credential types, never the matched values. It is a pattern-based guard, not a guarantee.
+- **Hidden information stays hidden.** Secret contexts and the imposter's identity never appear in room snapshots before the reveal. Each team receives only its own context, a spectating host receives none, and the browser bundle contains no prompt or context pairs.
+- **Expected advisor notices.** The Supabase Security Advisor flags anonymous access, which is intentional for this game (policies still check membership). Private tables use RLS with no policies, which means default-deny.
+- **Data retention.** Rooms expire after 24 hours. Deleting a `public.games` row cascades to all of its game data. Anonymous Auth users need separate cleanup if you want to remove them.
 
-The landing page contains only the join/host form and a small brand header. The interface uses a restrained crimson-and-neutral palette, one DM Sans type family, clear status cards, and fewer decorative instructions. The layout is responsive, keyboard-operable, and respects reduced motion. Fonts load from Google Fonts with system fallbacks.
+To report a vulnerability, please open a private [security advisory](https://github.com/chow-stack/imposter-llm/security/advisories/new) rather than a public issue.
+
+## Project structure
+
+```
+src/
+├── main.tsx            React app: join, team picker, writing, voting, reveal, host stage
+└── style.css           Party-game styles (responsive phone, tablet, and projector layouts)
+supabase/migrations/    Schema, round bank, RPCs, and hardening (apply in order)
+scripts/
+└── check-secrets.mjs   Pre-build credential scanner
+tests/                  Live integration suite, SQL scoring fixtures, preview helper
+vercel.json             CSP, security headers, SPA rewrites
+```
+
+## License
+
+Released under the [MIT License](LICENSE).
